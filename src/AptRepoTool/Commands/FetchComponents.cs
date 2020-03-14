@@ -1,18 +1,16 @@
-using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.Net;
 using AptRepoTool.Workspace;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
 namespace AptRepoTool.Commands
 {
-    public class ListComponents
+    public class FetchComponents
     {
         public static Command Create()
         {
-            var command = new Command("list-components")
+            var command = new Command("fetch-components")
             {
                 new Option(new []{"-d", "--workspace-directory"})
                 {
@@ -21,7 +19,7 @@ namespace AptRepoTool.Commands
                 },
             };
 
-            command.Handler = CommandHandler.Create(typeof(ListComponents).GetMethod(nameof(Run)));
+            command.Handler = CommandHandler.Create(typeof(FetchComponents).GetMethod(nameof(Run)));
             
             return command;
         }
@@ -35,7 +33,6 @@ namespace AptRepoTool.Commands
 
             foreach (var component in workspace.Components)
             {
-                Log.Logger.Information($"Fetching sources for: {component.Name.Quoted()}.");
                 component.FetchSources();
             }
         }

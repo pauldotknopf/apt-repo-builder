@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using AptRepoTool.Git;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -8,6 +10,13 @@ namespace AptRepoTool.Workspace.Impl
 {
     public class WorkspaceLoader : IWorkspaceLoader
     {
+        private readonly IGitCache _gitCache;
+
+        public WorkspaceLoader(IGitCache gitCache)
+        {
+            _gitCache = gitCache;
+        }
+        
         public IWorkspace Load(string workspaceDirectory)
         {
             var configFile = Path.Combine(workspaceDirectory, "config.yml");
@@ -42,6 +51,7 @@ namespace AptRepoTool.Workspace.Impl
 
                     foreach (var childDirectory in Directory.GetDirectories(componentPath))
                     {
+                        var componentName = Path.GetFileName(childDirectory);
                         var componentConfigPath = Path.Combine(childDirectory, "component.yml");
                         if (!File.Exists(componentConfigPath))
                         {
@@ -50,11 +60,32 @@ namespace AptRepoTool.Workspace.Impl
 
                         var componentConfig =
                             deserializer.Deserialize<ComponentConfigYaml>(File.ReadAllText(componentConfigPath));
+                        // ReSharper disable once ConditionIsAlwaysTrueOrFalse
+                        // ReSharper disable once HeuristicUnreachableCode   
                         if (componentConfig == null)
                         {
+                            // ReSharper disable once HeuristicUnreachableCode
                             throw new AptRepoToolException($"Invalid component.yml file at {componentConfigPath.Quoted()}.");
                         }
-                        workspace.AddComponent(new Component(Path.GetFileName(childDirectory), componentConfig.Dependencies));
+
+                        if (string.IsNullOrEmpty(componentConfig.GitUrl))
+                        {
+                            throw new AptRepoToolException($"No {"gitUrl".Quoted()} provided for {componentName.Quoted()}.");
+                        }
+                        if (string.IsNullOrEmpty(componentConfig.Branch))
+                        {
+                            throw new AptRepoToolException($"No {"branch".Quoted()} provided for {componentName.Quoted()}.");
+                        }
+                        if (string.IsNullOrEmpty(componentConfig.Revision))
+                        {
+                            throw new AptRepoToolException($"No {"revision".Quoted()} provided for {componentName.Quoted()}.");
+                        }
+                        workspace.AddComponent(new Component(componentName,
+                            componentConfig.Dependencies,
+                            componentConfig.GitUrl,
+                            componentConfig.Branch,
+                            componentConfig.Revision,
+                            _gitCache));
                     }
                 }
             }
@@ -64,10 +95,33 @@ namespace AptRepoTool.Workspace.Impl
             {
                 foreach (var dependency in component.Dependencies)
                 {
+                    // Will throw if component not found.
                     workspace.GetComponent(dependency);
                 }
             }
-
+            
+            // Validate recursion
+            void ProcessComponent(IComponent component, HashSet<string> stack)
+            {
+                stack.Add(component.Name);
+                foreach (var dependency in component.Dependencies)
+                {
+                    if (stack.Contains(dependency))
+                    {
+                        throw new AptRepoToolException($"Cycle detected {component.Name.Quoted()} <> {dependency.Quoted()}.");
+                    }
+                    var stackCopy = new HashSet<string>(stack);
+                    stackCopy.Add(dependency);
+                    ProcessComponent(workspace.GetComponent(dependency), stackCopy);
+                }
+            }
+            foreach (var component in workspace.Components)
+            {
+                ProcessComponent(component, new HashSet<string>());
+            }
+            
+            workspace.SortComponentsTopologically();
+            
             return workspace;
         }
 
@@ -79,6 +133,11 @@ namespace AptRepoTool.Workspace.Impl
         class ComponentConfigYaml
         {
             public string GitUrl { get; set; }
+            
+            public string Branch { get; set; }
+            
+            public string Revision { get; set; }
+            
             public List<string> Dependencies { get; set; }
         }
     }

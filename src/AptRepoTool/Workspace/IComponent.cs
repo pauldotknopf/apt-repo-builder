@@ -7,5 +7,15 @@ namespace AptRepoTool.Workspace
         public string Name { get; }
         
         public ReadOnlyCollection<string> Dependencies { get; }
+        
+        public string GitUrl { get; }
+        
+        public string Branch { get; }
+        
+        public ComponentSrcRev SourceRev { get; }
+
+        void ResolveUnknownCommit();
+
+        void FetchSources();
     }
 }

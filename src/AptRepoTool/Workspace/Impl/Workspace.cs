@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -6,7 +7,7 @@ namespace AptRepoTool.Workspace.Impl
 {
     public class Workspace : IWorkspace
     {
-        private readonly List<IComponent> _components = new List<IComponent>();
+        private List<IComponent> _components = new List<IComponent>();
 
         public Workspace(string rootDirectory)
         {
@@ -32,7 +33,49 @@ namespace AptRepoTool.Workspace.Impl
         
         public void AddComponent(IComponent component)
         {
+            if (_components.Any(x => x.Name == component.Name))
+            {
+                throw new AptRepoToolException($"The component {component.Name.Quoted()} already exists.");
+            }
             _components.Add(component);
+        }
+
+        public void SortComponentsTopologically()
+        {
+            var sorted = new List<IComponent>();
+            var visited = new Dictionary<string, bool>();
+
+            void Visit(IComponent component)
+            {
+                var alreadyVisited = visited.TryGetValue(component.Name, out var inProcess);
+
+                if (alreadyVisited)
+                {
+                    if (inProcess)
+                    {
+                        throw new ArgumentException("Cyclic dependency found.");
+                    }
+                }
+                else
+                {
+                    visited[component.Name] = true;
+
+                    foreach (var dependency in component.Dependencies)
+                    {
+                        Visit(GetComponent(dependency));
+                    }
+                    
+                    visited[component.Name] = false;
+                    sorted.Add(component);
+                }
+            }
+            
+            foreach (var item in _components)
+            {
+                Visit(item);
+            }
+
+            _components = sorted;
         }
     }
 }
