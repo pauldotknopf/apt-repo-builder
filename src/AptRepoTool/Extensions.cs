@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 
 namespace AptRepoTool
@@ -20,7 +21,24 @@ namespace AptRepoTool
             {
                 sb.Append(t.ToString("X2"));
             }
-            return sb.ToString();
+            return sb.ToString().ToLower();
+        }
+
+        public static void CleanOrCreateDirectory(this string directory)
+        {
+            if (!Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+                return;
+            }
+            foreach (var child in Directory.GetDirectories(directory))
+            {
+                Directory.Delete(child, true);
+            }
+            foreach (var file in Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly))
+            {
+                File.Delete(file);
+            }
         }
     }
 }

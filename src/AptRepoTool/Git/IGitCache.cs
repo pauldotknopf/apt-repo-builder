@@ -7,5 +7,7 @@ namespace AptRepoTool.Git
         bool ContainsBranchAndCommit(string url, string branch, string commit);
         
         string GetLatestCommit(string url, string branch);
+
+        void Extract(string url, string branch, string commit, string destination);
     }
 }

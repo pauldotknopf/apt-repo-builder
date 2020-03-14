@@ -12,6 +12,7 @@ namespace AptRepoTool.Git.Impl
         private readonly GitCacheOptions _options;
         private const string BaseGitCommand = "git -c core.fsyncobjectfiles=0";
         private HashSet<string> _repoFetched = new HashSet<string>();
+        private Dictionary<string, string> _lastCommit = new Dictionary<string, string>();
         
         public GitCache(IOptions<GitCacheOptions> options, IShellRunner shellRunner)
         {
@@ -73,6 +74,12 @@ namespace AptRepoTool.Git.Impl
 
         public string GetLatestCommit(string url, string branch)
         {
+            var key = $"{url}:{branch}";
+            if (_lastCommit.ContainsKey(key))
+            {
+                return _lastCommit[key];
+            }
+            
             var output = _shellRunner.ReadShell($"{BaseGitCommand} ls-remote {url.Quoted()}",
                 new RunnerOptions
                 {
@@ -90,13 +97,43 @@ namespace AptRepoTool.Git.Impl
                     var split = line.Split("\t");
                     if (split[1] == $"refs/heads/{branch}")
                     {
-                        return split[0];
+                        _lastCommit.Add(key, split[0]);
+                        return _lastCommit[key];
                     }
                     line = reader.ReadLine();
                 }
             }
             
             throw new AptRepoToolException($"No upstream branch {branch.Quoted()} found at {url.Quoted()}.");
+        }
+
+        public void Extract(string url, string branch, string commit, string destination)
+        {
+            var mirrorDirectory = GetMirrorDirectory(url);
+
+            if (!Directory.Exists(destination))
+            {
+                Directory.CreateDirectory(destination);
+            }
+            else
+            {
+                foreach (var directory in Directory.GetDirectories(destination, "*", SearchOption.TopDirectoryOnly))
+                {
+                    Directory.Delete(directory, true);
+                }
+
+                foreach (var file in Directory.GetFiles(destination))
+                {
+                    File.Delete(file);
+                }
+            }
+            
+            Run($"{BaseGitCommand} clone -s -n {mirrorDirectory.Quoted()} {destination.Quoted()}");
+            Run($"{BaseGitCommand} remote set-url origin {url.Quoted()}", destination);
+            Run($"{BaseGitCommand} checkout -B {branch} {commit}", destination);
+            Run($"{BaseGitCommand} branch {branch} --set-upstream-to origin/{branch}", destination);
+            Run($"{BaseGitCommand} checkout {commit}", destination);
+            Run($"{BaseGitCommand} submodule update --init --recursive", destination);
         }
 
         private string GetMirrorDirectory(string url)
@@ -133,7 +170,10 @@ namespace AptRepoTool.Git.Impl
                     WorkingDirectory = directory,
                     Env = new Dictionary<string, string>
                     {
-                        {"LANG", "C"}
+                        {"LANG", "C"},
+                        // {"GIT_TRACE", "1"},
+                        // {"GIT_TRANSFER_TRACE", "1"},
+                        // {"GIT_CURL_VERBOSE", "1"}
                     }
                 });
         }

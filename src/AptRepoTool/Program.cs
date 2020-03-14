@@ -20,7 +20,9 @@ namespace AptRepoTool
             var rootCommand = new RootCommand
             {
                 Commands.ListComponents.Create(),
-                Commands.FetchComponents.Create()
+                Commands.FetchComponents.Create(),
+                Commands.BuildRootfs.Create(),
+                Commands.BuildComponent.Create()
             };
             rootCommand.Name = "apt-repo-tool";
             rootCommand.Description = "A tool to build an apt-repo from a deterministic set of inputs (git commits).";

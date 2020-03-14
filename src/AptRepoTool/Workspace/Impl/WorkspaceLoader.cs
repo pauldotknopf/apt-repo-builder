@@ -2,7 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AptRepoTool.BuildCache;
 using AptRepoTool.Git;
+using AptRepoTool.Rootfs;
+using AptRepoTool.Rootfs.Impl;
+using AptRepoTool.Shell;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -11,10 +15,21 @@ namespace AptRepoTool.Workspace.Impl
     public class WorkspaceLoader : IWorkspaceLoader
     {
         private readonly IGitCache _gitCache;
+        private readonly IShellRunner _shellRunner;
+        private readonly IBuildCache _buildCache;
 
-        public WorkspaceLoader(IGitCache gitCache)
+        private readonly IDeserializer _yamlDeserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .IgnoreUnmatchedProperties()
+            .Build();
+
+        public WorkspaceLoader(IGitCache gitCache,
+            IShellRunner shellRunner,
+            IBuildCache buildCache)
         {
             _gitCache = gitCache;
+            _shellRunner = shellRunner;
+            _buildCache = buildCache;
         }
         
         public IWorkspace Load(string workspaceDirectory)
@@ -25,13 +40,8 @@ namespace AptRepoTool.Workspace.Impl
                 throw new AptRepoToolException("Couldn't find config.yml");
             }
 
-            var deserializer = new DeserializerBuilder()
-                .WithNamingConvention(CamelCaseNamingConvention.Instance)
-                .Build();
-
-            var config = deserializer.Deserialize<RootConfigYaml>(File.ReadAllText(configFile));
-
-            var workspace = new Workspace(workspaceDirectory);
+            var config = _yamlDeserializer.Deserialize<RootConfigYaml>(File.ReadAllText(configFile));
+            var workspace = new Workspace(workspaceDirectory, GetRootfsExecutor(workspaceDirectory, config), _buildCache, _gitCache);
             
             if (config.Components != null)
             {
@@ -58,8 +68,7 @@ namespace AptRepoTool.Workspace.Impl
                             continue;
                         }
 
-                        var componentConfig =
-                            deserializer.Deserialize<ComponentConfigYaml>(File.ReadAllText(componentConfigPath));
+                        var componentConfig = _yamlDeserializer.Deserialize<ComponentConfigYaml>(File.ReadAllText(componentConfigPath));
                         // ReSharper disable once ConditionIsAlwaysTrueOrFalse
                         // ReSharper disable once HeuristicUnreachableCode   
                         if (componentConfig == null)
@@ -85,7 +94,10 @@ namespace AptRepoTool.Workspace.Impl
                             componentConfig.GitUrl,
                             componentConfig.Branch,
                             componentConfig.Revision,
-                            _gitCache));
+                            _gitCache,
+                            workspace,
+                            _buildCache,
+                            _shellRunner));
                     }
                 }
             }
@@ -125,9 +137,65 @@ namespace AptRepoTool.Workspace.Impl
             return workspace;
         }
 
+        private IRootfsExecutor GetRootfsExecutor(string workspaceDirectory, RootConfigYaml config)
+        {
+            if (string.IsNullOrEmpty(config.RootFs))
+            {
+                config.RootFs = "rootfs";
+            }
+
+            if (Path.IsPathRooted(config.RootFs))
+            {
+                throw new AptRepoToolException($"Invalid rootfs value {config.RootFs.Quoted()}");
+            }
+
+            var directory = Path.Combine(workspaceDirectory, config.RootFs);
+            if (!Directory.Exists(directory))
+            {
+                throw new AptRepoToolException($"The rootfs directory {config.RootFs.Quoted()} doesn't exist.");
+            }
+
+            var rootfsConfigPath = Path.Combine(directory, "config.yml");
+            if (!File.Exists(rootfsConfigPath))
+            {
+                throw new AptRepoToolException($"The config.yml doesn't exist in the rootfs directory.");
+            }
+
+            var rootfsConfig = _yamlDeserializer.Deserialize<RootfsConfigYaml>(File.ReadAllText(rootfsConfigPath));
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
+            if (rootfsConfig == null)
+            // ReSharper disable once HeuristicUnreachableCode
+            {
+                // ReSharper disable once HeuristicUnreachableCode
+                rootfsConfig = new RootfsConfigYaml();
+            }
+
+            IRootfsExecutor executor;
+            
+            switch (rootfsConfig.Type)
+            {
+                case "docker":
+                    executor = new DockerRootfsExecutor(_shellRunner);
+                    break;
+                default:
+                    throw new AptRepoToolException($"Invalid rootfs type");
+            }
+            
+            executor.Configure(directory);
+
+            return executor;
+        }
+
+        class RootfsConfigYaml
+        {
+            public string Type { get; set; }
+        }
+        
         class RootConfigYaml
         {
             public List<string> Components { get; set; }
+            
+            public string RootFs { get; set; }
         }
 
         class ComponentConfigYaml

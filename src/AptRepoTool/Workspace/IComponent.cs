@@ -6,6 +6,8 @@ namespace AptRepoTool.Workspace
     {
         public string Name { get; }
         
+        public string MD5 { get; }
+        
         public ReadOnlyCollection<string> Dependencies { get; }
         
         public string GitUrl { get; }
@@ -17,5 +19,11 @@ namespace AptRepoTool.Workspace
         void ResolveUnknownCommit();
 
         void FetchSources();
+
+        void Extract(string directory);
+        
+        void CalculateMD5Sum();
+
+        void Build(bool force);
     }
 }

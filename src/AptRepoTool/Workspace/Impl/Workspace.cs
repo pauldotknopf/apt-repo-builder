@@ -1,16 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using AptRepoTool.BuildCache;
+using AptRepoTool.Git;
+using AptRepoTool.Rootfs;
 
 namespace AptRepoTool.Workspace.Impl
 {
     public class Workspace : IWorkspace
     {
+        private readonly IRootfsExecutor _rootfsExecutor;
+        private readonly IBuildCache _buildCache;
+        private readonly IGitCache _gitCache;
         private List<IComponent> _components = new List<IComponent>();
 
-        public Workspace(string rootDirectory)
+        public Workspace(string rootDirectory,
+            IRootfsExecutor rootfsExecutor,
+            IBuildCache buildCache,
+            IGitCache gitCache)
         {
+            _rootfsExecutor = rootfsExecutor;
+            _buildCache = buildCache;
+            _gitCache = gitCache;
             RootDirectory = rootDirectory;
         }
 
@@ -30,7 +43,51 @@ namespace AptRepoTool.Workspace.Impl
 
             return component;
         }
-        
+
+        public void BuildComponent(string name, bool force)
+        {
+            var sorted = new List<IComponent>();
+            var visited = new Dictionary<string, bool>();
+
+            void Visit(IComponent component)
+            {
+                var alreadyVisited = visited.TryGetValue(component.Name, out var inProcess);
+
+                if (alreadyVisited)
+                {
+                    if (inProcess)
+                    {
+                        throw new ArgumentException("Cyclic dependency found.");
+                    }
+                }
+                else
+                {
+                    visited[component.Name] = true;
+
+                    foreach (var dependency in component.Dependencies)
+                    {
+                        Visit(GetComponent(dependency));
+                    }
+                    
+                    visited[component.Name] = false;
+                    sorted.Add(component);
+                }
+            }
+            
+            Visit(GetComponent(name));
+
+            // Question, should we only force rebuild of the requested component? Or all dependencies?
+            foreach (var component in sorted)
+            {
+                component.Build(force);
+            }
+        }
+
+        public void BuildRootfs()
+        {
+            _rootfsExecutor.Build();
+        }
+
         public void AddComponent(IComponent component)
         {
             if (_components.Any(x => x.Name == component.Name))
