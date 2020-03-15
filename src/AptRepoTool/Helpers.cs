@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using AptRepoTool.BuildCache;
+using AptRepoTool.Config;
+using AptRepoTool.Config.Impl;
 using AptRepoTool.Git;
 using AptRepoTool.Git.Impl;
 using AptRepoTool.Shell;
@@ -42,6 +44,7 @@ namespace AptRepoTool
                 options.BuildCacheDir = Path.Combine(workspaceDirectory, ".build-cache");
             });
             services.AddSingleton<IBuildCache, BuildCache.Impl.BuildCache>();
+            services.AddSingleton<IConfigParser, ConfigParser>();
             return services.BuildServiceProvider();
         }
     }

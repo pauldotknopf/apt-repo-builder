@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Git;
+using AptRepoTool.Rootfs;
 using AptRepoTool.Shell;
 using Serilog;
 
@@ -14,6 +15,7 @@ namespace AptRepoTool.Workspace.Impl
         private readonly Workspace _workspace;
         private readonly IBuildCache _buildCache;
         private readonly IShellRunner _shellRunner;
+        private readonly IRootfsExecutor _rootfsExecutor;
 
         public Component(string name,
             List<string> dependencies,
@@ -23,12 +25,14 @@ namespace AptRepoTool.Workspace.Impl
             IGitCache gitCache,
             Workspace workspace,
             IBuildCache buildCache,
-            IShellRunner shellRunner)
+            IShellRunner shellRunner,
+            IRootfsExecutor rootfsExecutor)
         {
             _gitCache = gitCache;
             _workspace = workspace;
             _buildCache = buildCache;
             _shellRunner = shellRunner;
+            _rootfsExecutor = rootfsExecutor;
             name.NotNullOrEmpty(nameof(name));
             gitUrl.NotNullOrEmpty(nameof(gitUrl));
             branch.NotNullOrEmpty(nameof(branch));
@@ -98,7 +102,7 @@ namespace AptRepoTool.Workspace.Impl
                 ResolveUnknownCommit();
             }
             
-            var hash = $"{SourceRev.Commit}{GitUrl}";
+            var hash = $"{SourceRev.Commit}{GitUrl}{_rootfsExecutor.MD5Sum}";
             foreach (var dependency in Dependencies)
             {
                 var component = _workspace.GetComponent(dependency);

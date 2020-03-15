@@ -5,13 +5,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace AptRepoTool.Commands
 {
-    public class BuildComponent
+    public class BuildAll
     {
         public static Command Create()
         {
-            var command = new Command("build-component")
+            var command = new Command("build-all")
             {
-                new Argument<string>("name"),
                 new Option(new []{"-d", "--workspace-directory"})
                 {
                     Name = "workspace-directory",
@@ -24,24 +23,22 @@ namespace AptRepoTool.Commands
                 },
             };
 
-            command.Handler = CommandHandler.Create(typeof(BuildComponent).GetMethod(nameof(Run)));
+            command.Handler = CommandHandler.Create(typeof(BuildAll).GetMethod(nameof(Run)));
             
             return command;
         }
         
-        public static void Run(string name, bool force, string workspaceDirectory)
+        public static void Run(bool force, string workspaceDirectory)
         {
-            if (string.IsNullOrEmpty(name))
-            {
-                throw new AptRepoToolException($"You must provide a component name to build.");
-            }
-            
             workspaceDirectory = Helpers.GetWorkspaceDirectory(workspaceDirectory);
 
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
-            workspace.BuildComponent(name, force);
+            foreach (var component in workspace.Components)
+            {
+                component.Build(force);
+            }
         }
     }
 }

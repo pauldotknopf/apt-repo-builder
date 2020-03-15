@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using AptRepoTool.BuildCache;
+using AptRepoTool.Config;
 using AptRepoTool.Git;
 using AptRepoTool.Rootfs;
 using AptRepoTool.Rootfs.Impl;
@@ -17,19 +19,17 @@ namespace AptRepoTool.Workspace.Impl
         private readonly IGitCache _gitCache;
         private readonly IShellRunner _shellRunner;
         private readonly IBuildCache _buildCache;
-
-        private readonly IDeserializer _yamlDeserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .IgnoreUnmatchedProperties()
-            .Build();
+        private readonly IConfigParser _configParser;
 
         public WorkspaceLoader(IGitCache gitCache,
             IShellRunner shellRunner,
-            IBuildCache buildCache)
+            IBuildCache buildCache,
+            IConfigParser configParser)
         {
             _gitCache = gitCache;
             _shellRunner = shellRunner;
             _buildCache = buildCache;
+            _configParser = configParser;
         }
         
         public IWorkspace Load(string workspaceDirectory)
@@ -40,8 +40,9 @@ namespace AptRepoTool.Workspace.Impl
                 throw new AptRepoToolException("Couldn't find config.yml");
             }
 
-            var config = _yamlDeserializer.Deserialize<RootConfigYaml>(File.ReadAllText(configFile));
-            var workspace = new Workspace(workspaceDirectory, GetRootfsExecutor(workspaceDirectory, config), _buildCache, _gitCache);
+            var config = _configParser.LoadRootConfig(File.ReadAllText(configFile));
+            var rootfsExecutor = GetRootfsExecutor(workspaceDirectory, config);
+            var workspace = new Workspace(workspaceDirectory, rootfsExecutor, _buildCache, _gitCache);
             
             if (config.Components != null)
             {
@@ -68,36 +69,29 @@ namespace AptRepoTool.Workspace.Impl
                             continue;
                         }
 
-                        var componentConfig = _yamlDeserializer.Deserialize<ComponentConfigYaml>(File.ReadAllText(componentConfigPath));
-                        // ReSharper disable once ConditionIsAlwaysTrueOrFalse
-                        // ReSharper disable once HeuristicUnreachableCode   
-                        if (componentConfig == null)
+                        var componentConfig = _configParser.LoadComponentConfig(File.ReadAllText(componentConfigPath));
+                        if (string.IsNullOrEmpty(componentConfig.Url))
                         {
-                            // ReSharper disable once HeuristicUnreachableCode
-                            throw new AptRepoToolException($"Invalid component.yml file at {componentConfigPath.Quoted()}.");
-                        }
-
-                        if (string.IsNullOrEmpty(componentConfig.GitUrl))
-                        {
-                            throw new AptRepoToolException($"No {"gitUrl".Quoted()} provided for {componentName.Quoted()}.");
+                            throw new AptRepoToolException($"No {"url".Quoted()} provided for {componentName.Quoted()}.");
                         }
                         if (string.IsNullOrEmpty(componentConfig.Branch))
                         {
                             throw new AptRepoToolException($"No {"branch".Quoted()} provided for {componentName.Quoted()}.");
                         }
-                        if (string.IsNullOrEmpty(componentConfig.Revision))
+                        if (string.IsNullOrEmpty(componentConfig.Commit))
                         {
-                            throw new AptRepoToolException($"No {"revision".Quoted()} provided for {componentName.Quoted()}.");
+                            throw new AptRepoToolException($"No {"commit".Quoted()} provided for {componentName.Quoted()}.");
                         }
                         workspace.AddComponent(new Component(componentName,
                             componentConfig.Dependencies,
-                            componentConfig.GitUrl,
+                            componentConfig.Url,
                             componentConfig.Branch,
-                            componentConfig.Revision,
+                            componentConfig.Commit,
                             _gitCache,
                             workspace,
                             _buildCache,
-                            _shellRunner));
+                            _shellRunner,
+                            rootfsExecutor));
                     }
                 }
             }
@@ -137,22 +131,22 @@ namespace AptRepoTool.Workspace.Impl
             return workspace;
         }
 
-        private IRootfsExecutor GetRootfsExecutor(string workspaceDirectory, RootConfigYaml config)
+        private IRootfsExecutor GetRootfsExecutor(string workspaceDirectory, RootConfig config)
         {
-            if (string.IsNullOrEmpty(config.RootFs))
+            if (string.IsNullOrEmpty(config.Rootfs))
             {
-                config.RootFs = "rootfs";
+                config.Rootfs = "rootfs";
             }
 
-            if (Path.IsPathRooted(config.RootFs))
+            if (Path.IsPathRooted(config.Rootfs))
             {
-                throw new AptRepoToolException($"Invalid rootfs value {config.RootFs.Quoted()}");
+                throw new AptRepoToolException($"Invalid rootfs value {config.Rootfs.Quoted()}");
             }
 
-            var directory = Path.Combine(workspaceDirectory, config.RootFs);
+            var directory = Path.Combine(workspaceDirectory, config.Rootfs);
             if (!Directory.Exists(directory))
             {
-                throw new AptRepoToolException($"The rootfs directory {config.RootFs.Quoted()} doesn't exist.");
+                throw new AptRepoToolException($"The rootfs directory {config.Rootfs.Quoted()} doesn't exist.");
             }
 
             var rootfsConfigPath = Path.Combine(directory, "config.yml");
@@ -161,52 +155,59 @@ namespace AptRepoTool.Workspace.Impl
                 throw new AptRepoToolException($"The config.yml doesn't exist in the rootfs directory.");
             }
 
-            var rootfsConfig = _yamlDeserializer.Deserialize<RootfsConfigYaml>(File.ReadAllText(rootfsConfigPath));
-            // ReSharper disable once ConditionIsAlwaysTrueOrFalse
-            if (rootfsConfig == null)
-            // ReSharper disable once HeuristicUnreachableCode
-            {
-                // ReSharper disable once HeuristicUnreachableCode
-                rootfsConfig = new RootfsConfigYaml();
-            }
-
+            var rootfsConfig = _configParser.LoadRootfsConfig(File.ReadAllText(rootfsConfigPath));
             IRootfsExecutor executor;
-            
-            switch (rootfsConfig.Type)
+
+            var md5Sum = "";
+            using (var md5 = MD5.Create())
             {
-                case "docker":
-                    executor = new DockerRootfsExecutor(_shellRunner);
-                    break;
-                default:
-                    throw new AptRepoToolException($"Invalid rootfs type");
+                foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories))
+                {
+                    using (var stream = File.OpenRead(file))
+                    {
+                        md5.ComputeHash(stream);
+                    }
+                }
+                md5Sum = BitConverter.ToString(md5.Hash).Replace("-", "").ToLowerInvariant();;
             }
             
-            executor.Configure(directory);
+            if (rootfsConfig is DockerRootfsConfig dockerRootfsConfig)
+            {
+                executor = new DockerRootfsExecutor(_shellRunner, dockerRootfsConfig, md5Sum, directory);
+            }
+            else
+            {
+                throw new Exception("Unknown rootfs type.");
+            }
 
             return executor;
         }
 
-        class RootfsConfigYaml
-        {
-            public string Type { get; set; }
-        }
-        
-        class RootConfigYaml
-        {
-            public List<string> Components { get; set; }
-            
-            public string RootFs { get; set; }
-        }
-
-        class ComponentConfigYaml
-        {
-            public string GitUrl { get; set; }
-            
-            public string Branch { get; set; }
-            
-            public string Revision { get; set; }
-            
-            public List<string> Dependencies { get; set; }
-        }
+        // class RootfsConfigYaml
+        // {
+        //     public string Type { get; set; }
+        // }
+        //
+        // class RootConfigYaml
+        // {
+        //     public List<string> Components { get; set; }
+        //     
+        //     public string RootFs { get; set; }
+        // }
+        //
+        // class ComponentConfigYaml
+        // {
+        //     public string Url { get; set; }
+        //     
+        //     public string Branch { get; set; }
+        //     
+        //     public string Commit { get; set; }
+        //     
+        //     public List<string> Dependencies { get; set; }
+        //     
+        //     public string Type { get; set; }
+        //     
+        //     public string DebianDirectory { get; set; }
+        // }
     }
 }
