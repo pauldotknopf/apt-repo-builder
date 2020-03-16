@@ -20,7 +20,7 @@ namespace AptRepoTool.Commands
                 {
                     Name = "force",
                     Argument = new Argument<bool>()
-                },
+                }
             };
 
             command.Handler = CommandHandler.Create(typeof(BuildAll).GetMethod(nameof(Run)));
@@ -35,6 +35,8 @@ namespace AptRepoTool.Commands
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
+            workspace.BuildRootfs(false);
+            
             foreach (var component in workspace.Components)
             {
                 component.Build(force, false);

@@ -43,8 +43,13 @@ namespace AptRepoTool.Workspace.Impl
             return component;
         }
 
-        public void BuildComponent(string name, bool force, bool bashPrompt)
+        public void BuildComponent(string name, ComponentBuildOptions options)
         {
+            if (options == null)
+            {
+                options = new ComponentBuildOptions();
+            }
+            
             var sorted = new List<IComponent>();
             var visited = new Dictionary<string, bool>();
 
@@ -80,7 +85,9 @@ namespace AptRepoTool.Workspace.Impl
             // Question, should we only force rebuild of the requested component? Or all dependencies?
             foreach (var component in sorted)
             {
-                component.Build(force, bashPrompt);
+                component.Build(
+                    component.Name == name ? options.ForceBuild : options.ForceBuildDependencies,
+                    options.PromptBeforeBuild);
             }
         }
 

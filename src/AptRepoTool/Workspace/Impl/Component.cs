@@ -193,16 +193,14 @@ namespace AptRepoTool.Workspace.Impl
                         // Build the source package
                         stepScript.AppendLine(". /usr/lib/pbuilder/pbuilder-buildpackage-funcs");
                         stepScript.AppendLine($"cd {targetDirectory.Quoted()}");
-                        stepScript.AppendLine("VERSION=$(dpkg-parsechangelog -l debian/changelog -S Version)");
-                        stepScript.AppendLine("SOURCE=$(dpkg-parsechangelog -l debian/changelog -S Source)");
-                        stepScript.AppendLine("VERSION_BASE=$(perl -e \"use Dpkg::Version; printf Dpkg::Version->new(\\\"${VERSION}\\\")->as_string(omit_epoch => 1, omit_revision => 1);\")");
-                        stepScript.AppendLine("SOURCE_TARBALL=\"../${SOURCE}_${VERSION_BASE}.orig.tar.xz\"");
-                        stepScript.AppendLine("DSC_FILE_NAME=\"${SOURCE}_${VERSION}.dsc\"");
-                        stepScript.AppendLine("CHANGES_ARCHITECTURE=$(dpkg-architecture -qDEB_HOST_ARCH)");
-                        stepScript.AppendLine("CHANGES_BASENAME=$(dsc_get_basename \"${DSC_FILE_NAME}\" \"yes\")");
-                        stepScript.AppendLine("if [ ! -f \"$SOURCE_TARBALL\" ]; then");
-                        stepScript.AppendLine("  echo \"TODO: Auto generate the source tarball!\"");
-                        stepScript.AppendLine("  exit 1");
+                        stepScript.AppendLine("export VERSION=$(dpkg-parsechangelog -l debian/changelog -S Version)");
+                        stepScript.AppendLine("export SOURCE=$(dpkg-parsechangelog -l debian/changelog -S Source)");
+                        stepScript.AppendLine("export VERSION_BASE=$(perl -e \"use Dpkg::Version; printf Dpkg::Version->new(\\\"${VERSION}\\\")->as_string(omit_epoch => 1, omit_revision => 1);\")");
+                        stepScript.AppendLine("export SOURCE_TARBALL_NAME=\"${SOURCE}_${VERSION_BASE}.orig.tar.xz\"");
+                        stepScript.AppendLine("export DSC_FILE_NAME=\"${SOURCE}_${VERSION}.dsc\"");
+                        stepScript.AppendLine("export CHANGES_ARCHITECTURE=$(dpkg-architecture -qDEB_HOST_ARCH)");
+                        stepScript.AppendLine("if [ ! -f \"../${SOURCE_TARBALL_NAME}\" ]; then");
+                        stepScript.AppendLine("  tar cfJ ../${SOURCE_TARBALL_NAME} --exclude=\"./debian*\" . --transform \"s,^,${SOURCE}_${VERSION_BASE}/,\"");
                         stepScript.AppendLine("fi");
                         stepScript.AppendLine("dpkg-source -b .");
                         
@@ -215,6 +213,7 @@ namespace AptRepoTool.Workspace.Impl
                         stepScript.AppendLine("fakeroot dpkg-buildpackage -us -uc");
                         
                         // Copy the build outputs to the packages directory.
+                        stepScript.AppendLine("CHANGES_BASENAME=$(dsc_get_basename \"../${DSC_FILE_NAME}\" \"yes\")");
                         stepScript.AppendLine("FILES=$(get822files \"changes\" \"../${CHANGES_BASENAME}_${CHANGES_ARCHITECTURE}.changes\")");
                         stepScript.AppendLine("for FILE in $FILES; do");
                         stepScript.AppendLine("  if [ -f \"${FILE}\" ]; then");
@@ -293,14 +292,17 @@ namespace AptRepoTool.Workspace.Impl
             
             using (var packagesCache = _buildCache.StartSession($"packages-{Name}-{MD5}", true))
             {
-                if (Directory.GetFiles(packagesDirectory).Length > 0 ||
-                    Directory.GetDirectories(packagesDirectory).Length > 0)
+                if (Directory.GetFiles(packagesDirectory).Length == 0)
                 {
-                    _shellRunner.RunShell($"cp -r {Path.Combine(packagesDirectory, "*")} .", new RunnerOptions
+                    throw new AptRepoToolException($"The component {Name} didn't generate any packages.");
+                }
+                _shellRunner.RunShell($"cp -r {Path.Combine(packagesDirectory, "*")} . " +
+                                      "&& dpkg-scanpackages . | gzip -9c > Packages.gz " +
+                                      "&& dpkg-scansources . | gzip -9c > Sources.gz", 
+                    new RunnerOptions
                     {
                         WorkingDirectory = packagesCache.Dir
                     });
-                }
                 packagesCache.Commit();
             }
         }
