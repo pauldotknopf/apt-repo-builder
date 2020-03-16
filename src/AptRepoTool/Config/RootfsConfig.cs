@@ -14,4 +14,9 @@ namespace AptRepoTool.Config
         
         public string Dockerfile { get; set; }
     }
+
+    public class TarballRootfsConfig : RootfsConfig
+    {
+        public override string Type => "tarball";
+    }
 }

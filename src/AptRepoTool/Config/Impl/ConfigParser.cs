@@ -22,6 +22,7 @@ namespace AptRepoTool.Config.Impl
             settings.Converters.Add(JsonSubtypesConverterBuilder
                 .Of(typeof(RootfsConfig), "Type") // type property is only defined here
                 .RegisterSubtype(typeof(DockerRootfsConfig), "docker")
+                .RegisterSubtype(typeof(TarballRootfsConfig), "tarball")
                 .SetFallbackSubtype(typeof(UnknownRootfsConfig))
                 .SerializeDiscriminatorProperty() // ask to serialize the type property
                 .Build());

@@ -161,6 +161,14 @@ namespace AptRepoTool.Workspace.Impl
                 entryScript.AppendLine("set -e");
                 entryScript.AppendLine("export LANG=C");
                 entryScript.AppendLine("export LC_ALL=C");
+                
+                // Switch to another user.
+                var userId = int.Parse(_shellRunner.ReadShell("id -u"));
+                entryScript.AppendLine($"useradd -u {userId} dummy");
+                entryScript.AppendLine("mkdir -p /home/dummy/.ssh");
+                entryScript.AppendLine("chown -R dummy:dummy /home/dummy");
+                entryScript.AppendLine("echo \"dummy ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/dummy");
+            
                 entryScript.AppendLine("cd /workspace/scripts");
                 var number = 1;
                 foreach (var step in _componentConfig.Steps)
@@ -169,7 +177,7 @@ namespace AptRepoTool.Workspace.Impl
                     var stepScript = scripts[stepScriptName] = new StringBuilder();
                     stepScript.AppendLine("#!/usr/bin/env bash");
                     stepScript.AppendLine("set -e");
-                    entryScript.AppendLine($"./{stepScriptName}");
+                    entryScript.AppendLine($"su dummy -c \"./{stepScriptName}\"");
                     if (step is ComponentConfig.DebianizedBuildStep debianizedBuildStep)
                     {
                         var targetDirectory = "/workspace/git";

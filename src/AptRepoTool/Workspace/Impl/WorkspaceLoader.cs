@@ -9,6 +9,7 @@ using AptRepoTool.Git;
 using AptRepoTool.Rootfs;
 using AptRepoTool.Rootfs.Impl;
 using AptRepoTool.Shell;
+using Serilog;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -159,22 +160,23 @@ namespace AptRepoTool.Workspace.Impl
             var rootfsConfig = _configParser.LoadRootfsConfig(File.ReadAllText(rootfsConfigPath));
             IRootfsExecutor executor;
 
-            var md5Sum = "";
-            using (var md5 = MD5.Create())
-            {
-                foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories))
+            // Generate md5sum of entire directory, but ignore the ./tmp directory.
+            var md5Sum = _shellRunner.ReadShell("find -type f -not -path \"./tmp/*\" -exec md5sum {} \\; | md5sum",
+                new RunnerOptions
                 {
-                    using (var stream = File.OpenRead(file))
-                    {
-                        md5.ComputeHash(stream);
-                    }
-                }
-                md5Sum = BitConverter.ToString(md5.Hash).Replace("-", "").ToLowerInvariant();;
-            }
+                    WorkingDirectory = directory
+                });
+            md5Sum = md5Sum.Substring(0, md5Sum.IndexOf(" ", StringComparison.Ordinal)).Substring(0, 7);
+            
+            Log.Information("The rootfs checksum is {checksum}.", md5Sum);
             
             if (rootfsConfig is DockerRootfsConfig dockerRootfsConfig)
             {
                 executor = new DockerRootfsExecutor(_shellRunner, dockerRootfsConfig, md5Sum, directory);
+            }
+            else if (rootfsConfig is TarballRootfsConfig tarballRootfsConfig)
+            {
+                executor = new TarballRootfsExecutor(md5Sum, directory, _buildCache, _shellRunner);
             }
             else
             {

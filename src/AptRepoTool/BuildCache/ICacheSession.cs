@@ -7,7 +7,5 @@ namespace AptRepoTool.BuildCache
         string Dir { get; }
         
         void Commit();
-
-        void Clean();
     }
 }

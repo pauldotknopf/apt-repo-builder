@@ -21,10 +21,16 @@ namespace AptRepoTool.Shell.Impl
             
             var escapedArgs = command.Replace("\"", "\\\"");
             
+            var sudoWhitelist = "";
+            if (runnerOptions.Env != null && runnerOptions.Env.Count > 0)
+            {
+                sudoWhitelist = $"--preserve-env={string.Join(",", runnerOptions.Env.Keys)}";
+            }
+            
             var processStartInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/usr/bin/env",
-                Arguments = $"bash -c \"{escapedArgs}\"",
+                Arguments = $"{(runnerOptions.UseSudo ? $"sudo {sudoWhitelist} " : "")}bash -c \"{escapedArgs}\"",
                 UseShellExecute = false,
                 RedirectStandardError = false,
                 RedirectStandardOutput = false,
@@ -68,11 +74,17 @@ namespace AptRepoTool.Shell.Impl
             }
             
             var escapedArgs = command.Replace("\"", "\\\"");
+
+            var sudoWhitelist = "";
+            if (runnerOptions.Env != null && runnerOptions.Env.Count > 0)
+            {
+                sudoWhitelist = $"--preserve-env={string.Join(",", runnerOptions.Env.Keys)}";
+            }
             
             var processStartInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/usr/bin/env",
-                Arguments = $"bash -c \"{escapedArgs}\"",
+                Arguments = $"{(runnerOptions.UseSudo ? $"sudo {sudoWhitelist} " : "")}bash -c \"{escapedArgs}\"",
                 UseShellExecute = false,
                 RedirectStandardError = false,
                 RedirectStandardOutput = true,
