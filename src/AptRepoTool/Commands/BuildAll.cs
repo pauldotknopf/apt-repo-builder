@@ -37,7 +37,7 @@ namespace AptRepoTool.Commands
 
             foreach (var component in workspace.Components)
             {
-                component.Build(force);
+                component.Build(force, false);
             }
         }
     }

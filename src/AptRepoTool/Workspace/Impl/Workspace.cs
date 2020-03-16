@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Git;
@@ -44,7 +43,7 @@ namespace AptRepoTool.Workspace.Impl
             return component;
         }
 
-        public void BuildComponent(string name, bool force)
+        public void BuildComponent(string name, bool force, bool bashPrompt)
         {
             var sorted = new List<IComponent>();
             var visited = new Dictionary<string, bool>();
@@ -76,16 +75,18 @@ namespace AptRepoTool.Workspace.Impl
             
             Visit(GetComponent(name));
 
+            BuildRootfs(false);
+            
             // Question, should we only force rebuild of the requested component? Or all dependencies?
             foreach (var component in sorted)
             {
-                component.Build(force);
+                component.Build(force, bashPrompt);
             }
         }
 
-        public void BuildRootfs()
+        public void BuildRootfs(bool force)
         {
-            _rootfsExecutor.Build();
+            _rootfsExecutor.BuildRoot(force);
         }
 
         public void AddComponent(IComponent component)

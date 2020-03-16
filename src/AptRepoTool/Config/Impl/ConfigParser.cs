@@ -1,8 +1,7 @@
 using System.IO;
-using System.Text.Json.Serialization;
+using JsonSubTypes;
 using Newtonsoft.Json;
 using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace AptRepoTool.Config.Impl
 {
@@ -18,10 +17,23 @@ namespace AptRepoTool.Config.Impl
         public RootfsConfig LoadRootfsConfig(string yaml)
         {
             var json = ConvertToJson(yaml);
-            var result = JsonConvert.DeserializeObject<RootfsConfig>(json);
+            
+            var settings = new JsonSerializerSettings();
+            settings.Converters.Add(JsonSubtypesConverterBuilder
+                .Of(typeof(RootfsConfig), "Type") // type property is only defined here
+                .RegisterSubtype(typeof(DockerRootfsConfig), "docker")
+                .SetFallbackSubtype(typeof(UnknownRootfsConfig))
+                .SerializeDiscriminatorProperty() // ask to serialize the type property
+                .Build());
+            
+            var result = JsonConvert.DeserializeObject<RootfsConfig>(json, settings);
+            if (result == null)
+            {
+                throw new AptRepoToolException($"Invalid {"rootfs".Quoted()} value.");
+            }
             if (result.Type == "invalid")
             {
-                throw new AptRepoToolException($"Invalid rootfs type.");
+                throw new AptRepoToolException($"Invalid {"rootfs".Quoted()} value.");
             }
 
             return result;
@@ -30,7 +42,30 @@ namespace AptRepoTool.Config.Impl
         public ComponentConfig LoadComponentConfig(string yaml)
         {
             var json = ConvertToJson(yaml);
-            return JsonConvert.DeserializeObject<ComponentConfig>(json);
+            
+            var settings = new JsonSerializerSettings();
+            settings.Converters.Add(JsonSubtypesConverterBuilder
+                .Of(typeof(ComponentConfig.Step), "Type") // type property is only defined here
+                .RegisterSubtype(typeof(ComponentConfig.DebianizedBuildStep), "debianized-build")
+                .RegisterSubtype(typeof(ComponentConfig.BashStep), "bash")
+                .SetFallbackSubtype(typeof(UnknownStep))
+                .SerializeDiscriminatorProperty() // ask to serialize the type property
+                .Build());
+            
+            var result = JsonConvert.DeserializeObject<ComponentConfig>(json, settings);
+            
+            if (result.Steps != null)
+            {
+                foreach (var step in result.Steps)
+                {
+                    if (step.Type == "invalid")
+                    {
+                        throw new AptRepoToolException($"Invalid {"type".Quoted()} for step.");
+                    }
+                }
+            }
+
+            return result;
         }
 
         private string ConvertToJson(string yaml)
@@ -47,9 +82,14 @@ namespace AptRepoTool.Config.Impl
             }
         }
 
-        class RawRootfs
+        private class UnknownRootfsConfig : RootfsConfig
         {
-            public string Type { get; set; }
+            public override string Type => "invalid";
+        }
+
+        private class UnknownStep : ComponentConfig.Step
+        {
+            public override string Type => "invalid";
         }
     }
 }

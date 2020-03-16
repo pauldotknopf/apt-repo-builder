@@ -16,6 +16,11 @@ namespace AptRepoTool.Commands
                     Name = "workspace-directory",
                     Argument = new Argument<string>()
                 },
+                new Option(new []{"-f", "--force"})
+                {
+                    Name = "force",
+                    Argument = new Argument<bool>()
+                },
             };
 
             command.Handler = CommandHandler.Create(typeof(BuildRootfs).GetMethod(nameof(Run)));
@@ -23,14 +28,14 @@ namespace AptRepoTool.Commands
             return command;
         }
         
-        public static void Run(string workspaceDirectory)
+        public static void Run(string workspaceDirectory, bool force)
         {
             workspaceDirectory = Helpers.GetWorkspaceDirectory(workspaceDirectory);
 
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
-            workspace.BuildRootfs();
+            workspace.BuildRootfs(force);
         }
     }
 }

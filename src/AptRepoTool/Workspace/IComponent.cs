@@ -24,6 +24,6 @@ namespace AptRepoTool.Workspace
         
         void CalculateMD5Sum();
 
-        void Build(bool force);
+        void Build(bool force, bool bashPrompt);
     }
 }

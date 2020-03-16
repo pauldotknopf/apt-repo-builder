@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using AptRepoTool.Workspace;
 using Microsoft.Extensions.DependencyInjection;
-using Serilog;
 
 namespace AptRepoTool.Commands
 {

@@ -22,6 +22,11 @@ namespace AptRepoTool.Commands
                     Name = "force",
                     Argument = new Argument<bool>()
                 },
+                new Option(new []{"-b", "--bash-prompt"})
+                {
+                    Name = "bash-prompt",
+                    Argument = new Argument<bool>()
+                },
             };
 
             command.Handler = CommandHandler.Create(typeof(BuildComponent).GetMethod(nameof(Run)));
@@ -29,7 +34,7 @@ namespace AptRepoTool.Commands
             return command;
         }
         
-        public static void Run(string name, bool force, string workspaceDirectory)
+        public static void Run(string name, bool force, bool bashPrompt, string workspaceDirectory)
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -41,7 +46,7 @@ namespace AptRepoTool.Commands
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
-            workspace.BuildComponent(name, force);
+            workspace.BuildComponent(name, force, bashPrompt);
         }
     }
 }

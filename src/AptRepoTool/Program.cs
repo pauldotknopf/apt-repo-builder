@@ -36,6 +36,10 @@ namespace AptRepoTool
                     if (ex is AptRepoToolException aptRepoToolException)
                     {
                         Log.Logger.Error(aptRepoToolException.Message);
+                        if (ex.InnerException != null)
+                        {
+                            Log.Logger.Error(ex.InnerException, ex.InnerException.Message);
+                        }
                     }
                     else if (ex is TargetInvocationException targetInvocationException)
                     {

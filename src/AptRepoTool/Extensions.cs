@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text;
 
@@ -26,18 +27,27 @@ namespace AptRepoTool
 
         public static void CleanOrCreateDirectory(this string directory)
         {
-            if (!Directory.Exists(directory))
+            try
             {
-                Directory.CreateDirectory(directory);
-                return;
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                    return;
+                }
+
+                foreach (var child in Directory.GetDirectories(directory))
+                {
+                    Directory.Delete(child, true);
+                }
+
+                foreach (var file in Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly))
+                {
+                    File.Delete(file);
+                }
             }
-            foreach (var child in Directory.GetDirectories(directory))
+            catch (Exception ex)
             {
-                Directory.Delete(child, true);
-            }
-            foreach (var file in Directory.GetFiles(directory, "*", SearchOption.TopDirectoryOnly))
-            {
-                File.Delete(file);
+                throw new AptRepoToolException($"There was a problem cleaning directory {directory.Quoted()}.", ex);
             }
         }
     }

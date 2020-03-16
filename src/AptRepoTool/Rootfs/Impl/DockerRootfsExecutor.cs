@@ -1,10 +1,8 @@
-using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 using AptRepoTool.Config;
 using AptRepoTool.Shell;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
+using Serilog;
 
 namespace AptRepoTool.Rootfs.Impl
 {
@@ -43,12 +41,67 @@ namespace AptRepoTool.Rootfs.Impl
         
         public string MD5Sum { get; }
         
-        public void Build()
+        public void BuildRoot(bool force)
         {
-            _shellRunner.RunShell($"docker build -f {_dockerfile.Quoted()} -t {GetImageName()} .", new RunnerOptions
+            var imageId = _shellRunner.ReadShell($"docker images -q {GetImageName()}");
+            if (!string.IsNullOrEmpty(imageId))
+            {
+                // The image is already built.
+                if (force)
+                {
+                    Log.Warning("Forcing a rebuild of the rootfs...");
+                }
+                else
+                {
+                    Log.Information("The rootfs image is up to date, skipping build...");
+                    return;
+                }
+            }
+            else
+            {
+                Log.Information("Building rootfs...");
+            }
+            
+            _shellRunner.RunShell($"docker build -f {_dockerfile.Quoted()} -t {GetImageName()} --no-cache .", new RunnerOptions
             {
                 WorkingDirectory = _rootfsDirectory
             });
+        }
+
+        public void Run(string script, RunOptions options)
+        {
+            script.NotNullOrEmpty(nameof(script));
+            script = script.Replace("\"", "\\\"");
+            
+            if (options == null)
+            {
+                options = new RunOptions();
+            }
+
+            var dockerArgs = new List<string>();
+
+            if (options.Interactive)
+            {
+                dockerArgs.Add("-it");
+            }
+            
+            foreach (var mount in options.Mounts)
+            {
+                dockerArgs.Add($"-v {mount.Source.Quoted()}:{mount.Target.Quoted()}");
+            }
+
+            foreach (var env in options.Env)
+            {
+                dockerArgs.Add($"-e {env.Key}={env.Value}");
+            }
+
+            // Pass the user id into the docker container.
+            // This is so that the container has the
+            // opportunity to run as that user.
+            var userId = int.Parse(_shellRunner.ReadShell("id -u "));
+            dockerArgs.Add($"-e USER_ID={userId}");
+            
+            _shellRunner.RunShell($"docker run --rm {string.Join(" ", dockerArgs)} {GetImageName()} /usr/bin/env bash -c \"{script}\"");
         }
 
         private string GetImageName()

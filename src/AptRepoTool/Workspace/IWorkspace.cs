@@ -11,8 +11,8 @@ namespace AptRepoTool.Workspace
 
         public IComponent GetComponent(string name);
 
-        public void BuildComponent(string name, bool force);
+        public void BuildComponent(string name, bool force, bool bashPrompt);
         
-        void BuildRootfs();
+        void BuildRootfs(bool force);
     }
 }

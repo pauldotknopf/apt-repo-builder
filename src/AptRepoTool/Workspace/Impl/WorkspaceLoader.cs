@@ -70,23 +70,24 @@ namespace AptRepoTool.Workspace.Impl
                         }
 
                         var componentConfig = _configParser.LoadComponentConfig(File.ReadAllText(componentConfigPath));
-                        if (string.IsNullOrEmpty(componentConfig.Url))
+                        if (componentConfig.Source == null)
+                        {
+                            throw new AptRepoToolException($"No {"source".Quoted()} was provided for {componentName.Quoted()}.");
+                        }
+                        if (string.IsNullOrEmpty(componentConfig.Source.Url))
                         {
                             throw new AptRepoToolException($"No {"url".Quoted()} provided for {componentName.Quoted()}.");
                         }
-                        if (string.IsNullOrEmpty(componentConfig.Branch))
+                        if (string.IsNullOrEmpty(componentConfig.Source.Branch))
                         {
                             throw new AptRepoToolException($"No {"branch".Quoted()} provided for {componentName.Quoted()}.");
                         }
-                        if (string.IsNullOrEmpty(componentConfig.Commit))
+                        if (string.IsNullOrEmpty(componentConfig.Source.Commit))
                         {
                             throw new AptRepoToolException($"No {"commit".Quoted()} provided for {componentName.Quoted()}.");
                         }
                         workspace.AddComponent(new Component(componentName,
-                            componentConfig.Dependencies,
-                            componentConfig.Url,
-                            componentConfig.Branch,
-                            componentConfig.Commit,
+                            componentConfig,
                             _gitCache,
                             workspace,
                             _buildCache,
