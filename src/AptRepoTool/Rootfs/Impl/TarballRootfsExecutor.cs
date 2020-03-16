@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Shell;
 using Serilog;
@@ -85,76 +86,138 @@ namespace AptRepoTool.Rootfs.Impl
             }
         }
 
-        public void Run(string script, RunOptions options)
+        public IRootfsSession StartSession(RunOptions options)
         {
-            script = script.Replace("\"", "\\\"");
+            if (!_buildCache.HasCacheDirectory(GetRootfsCacheKey()))
+            {
+                throw new AptRepoToolException($"The rootsf isn't build.");
+            }
+            
             var rootfsTarball = Path.Combine(_buildCache.GetCacheDirectory($"rootfs-{MD5Sum}"),
                 "rootfs.tar.gz");
+
+            var runSession = _buildCache.StartSession("rootfs-run", false);
+            var mountedMounts = new List<string>();
             
-            using (var runSession = _buildCache.StartSession("rootfs-run", false))
+            var runnerOptions = new RunnerOptions
             {
-                var runnerOptions = new RunnerOptions
-                {
-                    UseSudo = true,
-                    WorkingDirectory = runSession.Dir,
-                    Env = options.Env
-                };
+                UseSudo = true,
+                WorkingDirectory = runSession.Dir
+            };
+            
+            try
+            {
+                
                 _shellRunner.RunShell("find . -mindepth 1 -delete", runnerOptions);
                 _shellRunner.RunShell("mkdir rootfs", runnerOptions);
                 _shellRunner.RunShell($"tar -C rootfs -xf {rootfsTarball.Quoted()}", runnerOptions);
-
-                var mountedMounts = new List<string>();
-                try
+                
+                if (options.Mounts != null)
                 {
-                    if (options.Mounts != null)
+                    foreach (var mount in options.Mounts)
                     {
-                        foreach (var mount in options.Mounts)
-                        {
-                            var destination = Path.Combine(runnerOptions.WorkingDirectory, "rootfs") + mount.Target;
-                            _shellRunner.RunShell($"mkdir -p {destination} && mount -obind {mount.Source} {destination}", runnerOptions);
-                            mountedMounts.Add(destination);
-                        }
+                        var destination = Path.Combine(runnerOptions.WorkingDirectory, "rootfs") + mount.Target;
+                        _shellRunner.RunShell($"mkdir -p {destination} && mount -obind {mount.Source} {destination}", runnerOptions);
+                        mountedMounts.Add(destination);
                     }
+                }
 
-                    var procDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "proc");
-                    _shellRunner.RunShell($"mount proc {procDir.Quoted()} -t proc -o nosuid,noexec,nodev", runnerOptions);
-                    mountedMounts.Add(procDir);
+                var procDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "proc");
+                _shellRunner.RunShell($"mount proc {procDir.Quoted()} -t proc -o nosuid,noexec,nodev", runnerOptions);
+                mountedMounts.Add(procDir);
 
-                    var sysDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "sys");
-                    _shellRunner.RunShell($"mount sys {sysDir.Quoted()} -t sysfs -o nosuid,noexec,nodev,ro", runnerOptions);
-                    mountedMounts.Add(sysDir);
+                var sysDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "sys");
+                _shellRunner.RunShell($"mount sys {sysDir.Quoted()} -t sysfs -o nosuid,noexec,nodev,ro", runnerOptions);
+                mountedMounts.Add(sysDir);
 
-                    var devDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "dev");
-                    _shellRunner.RunShell($"mount udev {devDir.Quoted()} -t devtmpfs -o mode=0755,nosuid", runnerOptions);
-                    mountedMounts.Add(devDir);
+                var devDir = Path.Combine(runnerOptions.WorkingDirectory, "rootfs", "dev");
+                _shellRunner.RunShell($"mount udev {devDir.Quoted()} -t devtmpfs -o mode=0755,nosuid", runnerOptions);
+                mountedMounts.Add(devDir);
 
-                    var devPtrDir = Path.Combine(devDir, "pts");
-                    _shellRunner.RunShell($"mount devpts {devPtrDir.Quoted()} -t devpts -o mode=0620,gid=5,nosuid,noexec", runnerOptions);
-                    mountedMounts.Add(devPtrDir);
+                var devPtrDir = Path.Combine(devDir, "pts");
+                _shellRunner.RunShell($"mount devpts {devPtrDir.Quoted()} -t devpts -o mode=0620,gid=5,nosuid,noexec", runnerOptions);
+                mountedMounts.Add(devPtrDir);
                     
-                    var shmDir = Path.Combine(devDir, "shm");
-                    _shellRunner.RunShell($"mount shm {shmDir.Quoted()} -t tmpfs -o mode=1777,nosuid,nodev", runnerOptions);
-                    mountedMounts.Add(shmDir);
-                 
-                    var envParam = "";
-                    if (options.Env != null)
-                    {
-                        foreach (var env in options.Env)
-                        {
-                            envParam += $" {env.Key}={env.Value}";
-                        }
-                    }
+                var shmDir = Path.Combine(devDir, "shm");
+                _shellRunner.RunShell($"mount shm {shmDir.Quoted()} -t tmpfs -o mode=1777,nosuid,nodev", runnerOptions);
+                mountedMounts.Add(shmDir);
 
-                    _shellRunner.RunShell($"chroot rootfs /usr/bin/env {envParam} bash -c \"{script}\"", runnerOptions);
-                }
-                finally
+                return new RootfsSession(runSession, mountedMounts, _shellRunner);
+            }
+            catch (Exception)
+            {
+                // Unmount anything that may have been already mounted.
+                var mountsReverse = mountedMounts.ToList();
+                mountsReverse.Reverse();
+                foreach (var mount in mountsReverse)
                 {
-                    mountedMounts.Reverse();
-                    foreach (var mount in mountedMounts)
+                    _shellRunner.RunShell($"umount {mount}", runnerOptions);
+                }
+                
+                runSession.Dispose();
+                
+                throw;
+            }
+        }
+
+        private string GetRootfsCacheKey()
+        {
+            return $"rootfs-{MD5Sum.Substring(0, 7)}";
+        }
+
+        class RootfsSession : IRootfsSession
+        {
+            private readonly ICacheSession _rootfsCacheSession;
+            private readonly List<string> _mounts;
+            private readonly IShellRunner _shellRunner;
+            private bool _disposed = false;
+
+            public RootfsSession(ICacheSession rootfsCacheSession, List<string> mounts, IShellRunner shellRunner)
+            {
+                _rootfsCacheSession = rootfsCacheSession;
+                _mounts = mounts;
+                _shellRunner = shellRunner;
+            }
+            
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+                
+                // Unmount anything that may have been already mounted.
+                var mountsReverse = _mounts.ToList();
+                mountsReverse.Reverse();
+                foreach (var mount in mountsReverse)
+                {
+                    _shellRunner.RunShell($"umount {mount}", new RunnerOptions
                     {
-                        _shellRunner.RunShell($"umount {mount}", runnerOptions);
+                        UseSudo = true,
+                        WorkingDirectory = _rootfsCacheSession.Dir
+                    });
+                }
+                
+                _rootfsCacheSession.Dispose();
+            }
+
+            public void Run(string command, Dictionary<string, string> env = null)
+            {
+                var envParam = "";
+                if (env != null)
+                {
+                    foreach (var e in env)
+                    {
+                        envParam += $" {e.Key}={e.Value}";
                     }
                 }
+
+                _shellRunner.RunShell($"chroot rootfs /usr/bin/env {envParam} bash -c \"{command}\"", new RunnerOptions
+                {
+                    UseSudo = true,
+                    Env = env,
+                    WorkingDirectory = _rootfsCacheSession.Dir
+                });
             }
         }
     }

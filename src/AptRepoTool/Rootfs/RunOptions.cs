@@ -7,13 +7,8 @@ namespace AptRepoTool.Rootfs
         public RunOptions()
         {
             Mounts = new List<MountedVolume>();
-            Env = new Dictionary<string, string>();
         }
         
-        public bool Interactive { get; set; }
-        
         public List<MountedVolume> Mounts { get; }
-        
-        public Dictionary<string, string> Env { get; }
     }
 }

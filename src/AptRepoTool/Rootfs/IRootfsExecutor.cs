@@ -7,7 +7,7 @@ namespace AptRepoTool.Rootfs
         string MD5Sum { get; }
         
         void BuildRoot(bool force);
-        
-        void Run(string script, RunOptions options);
+
+        IRootfsSession StartSession(RunOptions options);
     }
 }

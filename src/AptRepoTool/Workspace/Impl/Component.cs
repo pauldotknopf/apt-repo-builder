@@ -173,19 +173,25 @@ namespace AptRepoTool.Workspace.Impl
             var scripts = new Dictionary<string, StringBuilder>();
             if (_componentConfig.Steps != null)
             {
+                // Switch to another user.
+                var userId = int.Parse(_shellRunner.ReadShell("id -u"));
+                var prepScript = scripts["prepare.sh"] = new StringBuilder();
+                prepScript.AppendLine("#!/usr/bin/env bash");
+                prepScript.AppendLine("set -e");
+                prepScript.AppendLine("export LANG=C");
+                prepScript.AppendLine("export LC_ALL=C");
+                prepScript.AppendLine($"useradd -u {userId} dummy");
+                prepScript.AppendLine("mkdir -p /home/dummy/.ssh");
+                prepScript.AppendLine("chown -R dummy:dummy /home/dummy");
+                prepScript.AppendLine("echo \"dummy ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/dummy");
+                prepScript.AppendLine("apt-get update");
+                
                 var entryScript = scripts["entry.sh"] = new StringBuilder();
                 entryScript.AppendLine("#!/usr/bin/env bash");
                 entryScript.AppendLine("set -e");
                 entryScript.AppendLine("export LANG=C");
                 entryScript.AppendLine("export LC_ALL=C");
                 
-                // Switch to another user.
-                var userId = int.Parse(_shellRunner.ReadShell("id -u"));
-                entryScript.AppendLine($"useradd -u {userId} dummy");
-                entryScript.AppendLine("mkdir -p /home/dummy/.ssh");
-                entryScript.AppendLine("chown -R dummy:dummy /home/dummy");
-                entryScript.AppendLine("echo \"dummy ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/dummy");
-            
                 entryScript.AppendLine("cd /workspace/scripts");
                 var number = 1;
                 foreach (var step in _componentConfig.Steps)
@@ -194,7 +200,7 @@ namespace AptRepoTool.Workspace.Impl
                     var stepScript = scripts[stepScriptName] = new StringBuilder();
                     stepScript.AppendLine("#!/usr/bin/env bash");
                     stepScript.AppendLine("set -e");
-                    entryScript.AppendLine($"su dummy -c \"./{stepScriptName}\"");
+                    entryScript.AppendLine($"./{stepScriptName}");
                     if (step is ComponentConfig.DebianizedBuildStep debianizedBuildStep)
                     {
                         var targetDirectory = "/workspace/git";
@@ -259,29 +265,9 @@ namespace AptRepoTool.Workspace.Impl
                 File.WriteAllText(scriptPath, script.Value.ToString());
                 Syscall.chmod(scriptPath, FilePermissions.ACCESSPERMS);
             }
-            
-            // Pass our scripts and source to the executor to be ran.
-            var containerEntry = "/workspace/scripts/entry.sh";
-            var interactive = false;
-            if (bashPrompt)
+
+            using (var rootfsSession = _rootfsExecutor.StartSession(new RunOptions
             {
-                // We want to start the container, but give the running user
-                // a bash prompt to poke around before the scripts are run.
-                Log.Warning("Starting a bash prompt before building {component}.", Name);
-                Log.Warning("The script {script} will be ran after exiting the prompt.", containerEntry);
-                containerEntry = $"bash && {containerEntry}";
-                interactive = true;
-            }
-            _rootfsExecutor.Run(containerEntry, new RunOptions
-            {
-                Interactive = interactive,
-                Env =
-                {
-                    { "ARB_BUILD_DIR" , "/workspace/build" },
-                    { "ARB_SCRIPTS_DIR", "/workspace/scripts" },
-                    { "ARB_GIT_DIR", "/workspace/git" },
-                    { "ARB_PACKAGES_DIR", "/workspace/packages" }
-                },
                 Mounts =
                 {
                     new MountedVolume
@@ -305,7 +291,32 @@ namespace AptRepoTool.Workspace.Impl
                         Target = "/workspace/packages"
                     }
                 }
-            });
+            }))
+            {
+                Log.Information("Preparing the rootfs environment...");
+                rootfsSession.Run("/workspace/scripts/prepare.sh");
+
+                var env = new Dictionary<string, string>
+                {
+                    {"ARB_BUILD_DIR", "/workspace/build"},
+                    {"ARB_SCRIPTS_DIR", "/workspace/scripts"},
+                    {"ARB_GIT_DIR", "/workspace/git"},
+                    {"ARB_PACKAGES_DIR", "/workspace/packages"}
+                };
+                
+                var containerEntry = "/workspace/scripts/entry.sh";
+                if (bashPrompt)
+                {
+                    // We want to start the container, but give the running user
+                    // a bash prompt to poke around before the scripts are run.
+                    Log.Warning("Starting a bash prompt before building {component}.", Name);
+                    Log.Warning("The script {script} will be ran after exiting the prompt.", containerEntry);
+                    rootfsSession.Run("su dummy -c bash", env);
+                }
+                
+                Log.Logger.Information("Running build steps...");
+                rootfsSession.Run($"su dummy -c \"{containerEntry}\"", env);
+            }
             
             using (var packagesCache = _buildCache.StartSession($"packages-{Name}-{MD5}", true))
             {

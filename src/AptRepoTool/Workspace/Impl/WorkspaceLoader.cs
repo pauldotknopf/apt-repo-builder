@@ -171,17 +171,18 @@ namespace AptRepoTool.Workspace.Impl
             
             Log.Information("The rootfs checksum is {checksum}.", md5Sum);
             
-            if (rootfsConfig is DockerRootfsConfig dockerRootfsConfig)
+            if (rootfsConfig is DockerRootfsConfig)
             {
-                executor = new DockerRootfsExecutor(_shellRunner, dockerRootfsConfig, md5Sum, directory);
+                throw new AptRepoToolException("The docker rootfs type isn't supported.");
             }
-            else if (rootfsConfig is TarballRootfsConfig)
+            
+            if (rootfsConfig is TarballRootfsConfig)
             {
                 executor = new TarballRootfsExecutor(md5Sum, directory, _buildCache, _shellRunner);
             }
             else
             {
-                throw new Exception("Unknown rootfs type.");
+                throw new AptRepoToolException("Unknown rootfs type.");
             }
 
             return executor;
