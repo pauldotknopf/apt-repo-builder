@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using AptRepoTool.Apt;
+using AptRepoTool.Apt.Impl;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Config;
 using AptRepoTool.Config.Impl;
@@ -45,6 +47,7 @@ namespace AptRepoTool
             });
             services.AddSingleton<IBuildCache, BuildCache.Impl.BuildCache>();
             services.AddSingleton<IConfigParser, ConfigParser>();
+            services.AddSingleton<IAptHelper, AptHelper>();
             return services.BuildServiceProvider();
         }
     }

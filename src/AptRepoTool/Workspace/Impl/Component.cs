@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
+using AptRepoTool.Apt;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Config;
 using AptRepoTool.Git;
@@ -21,6 +22,7 @@ namespace AptRepoTool.Workspace.Impl
         private readonly IBuildCache _buildCache;
         private readonly IShellRunner _shellRunner;
         private readonly IRootfsExecutor _rootfsExecutor;
+        private readonly IAptHelper _aptHelper;
 
         public Component(string name,
             ComponentConfig componentConfig,
@@ -28,7 +30,8 @@ namespace AptRepoTool.Workspace.Impl
             Workspace workspace,
             IBuildCache buildCache,
             IShellRunner shellRunner,
-            IRootfsExecutor rootfsExecutor)
+            IRootfsExecutor rootfsExecutor,
+            IAptHelper aptHelper)
         {
             _componentConfig = componentConfig;
             _gitCache = gitCache;
@@ -36,6 +39,7 @@ namespace AptRepoTool.Workspace.Impl
             _buildCache = buildCache;
             _shellRunner = shellRunner;
             _rootfsExecutor = rootfsExecutor;
+            _aptHelper = aptHelper;
             name.NotNullOrEmpty(nameof(name));
             
             Name = name;
@@ -83,9 +87,22 @@ namespace AptRepoTool.Workspace.Impl
             }
         }
 
-        public void Extract(string directory)
+        public void ExtractSource(string directory)
         {
             _gitCache.Extract(GitUrl, Branch, SourceRev.Commit, directory);
+        }
+
+        public void ExtractPackages(string directory)
+        {
+            var packageCacheKey = $"packages-{Name}-{MD5}";
+            if (!_buildCache.HasCacheDirectory(packageCacheKey))
+            {
+                throw new AptRepoToolException($"Can't extract packages for {Name.Quoted()}, none are available.");
+            }
+
+            var packageCacheDirectory = _buildCache.GetCacheDirectory(packageCacheKey);
+            Log.Information("Extracting packages for {component}...", Name);
+            _shellRunner.RunShell($"cp -rp {Path.Combine(packageCacheDirectory, "*")} {directory}");
         }
 
         public void CalculateMD5Sum()
@@ -142,7 +159,7 @@ namespace AptRepoTool.Workspace.Impl
             gitDirectory.CleanOrCreateDirectory();
             
             // Checkout the code.
-            Extract(gitDirectory);
+            ExtractSource(gitDirectory);
             
             // Prepare out build directory
             var buildWorkingDirectory = Path.Combine(buildDirectory.Dir, "build");
@@ -296,13 +313,12 @@ namespace AptRepoTool.Workspace.Impl
                 {
                     throw new AptRepoToolException($"The component {Name} didn't generate any packages.");
                 }
-                _shellRunner.RunShell($"cp -r {Path.Combine(packagesDirectory, "*")} . " +
-                                      "&& dpkg-scanpackages . | gzip -9c > Packages.gz " +
-                                      "&& dpkg-scansources . | gzip -9c > Sources.gz", 
+                _shellRunner.RunShell($"cp -r {Path.Combine(packagesDirectory, "*")} . ", 
                     new RunnerOptions
                     {
                         WorkingDirectory = packagesCache.Dir
                     });
+                _aptHelper.ScanSourcesAndPackages(packagesCache.Dir);
                 packagesCache.Commit();
             }
         }

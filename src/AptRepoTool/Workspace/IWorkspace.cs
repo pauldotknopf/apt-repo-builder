@@ -14,5 +14,7 @@ namespace AptRepoTool.Workspace
         public void BuildComponent(string name, ComponentBuildOptions options);
         
         void BuildRootfs(bool force);
+
+        void PublishRepo(string directory);
     }
 }

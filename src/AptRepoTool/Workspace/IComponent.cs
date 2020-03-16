@@ -20,7 +20,9 @@ namespace AptRepoTool.Workspace
 
         void FetchSources();
 
-        void Extract(string directory);
+        void ExtractSource(string directory);
+
+        void ExtractPackages(string directory);
         
         void CalculateMD5Sum();
 

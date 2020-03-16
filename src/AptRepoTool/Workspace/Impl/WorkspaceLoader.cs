@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
+using AptRepoTool.Apt;
 using AptRepoTool.BuildCache;
 using AptRepoTool.Config;
 using AptRepoTool.Git;
@@ -10,8 +9,6 @@ using AptRepoTool.Rootfs;
 using AptRepoTool.Rootfs.Impl;
 using AptRepoTool.Shell;
 using Serilog;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace AptRepoTool.Workspace.Impl
 {
@@ -21,16 +18,19 @@ namespace AptRepoTool.Workspace.Impl
         private readonly IShellRunner _shellRunner;
         private readonly IBuildCache _buildCache;
         private readonly IConfigParser _configParser;
+        private readonly IAptHelper _aptHelper;
 
         public WorkspaceLoader(IGitCache gitCache,
             IShellRunner shellRunner,
             IBuildCache buildCache,
-            IConfigParser configParser)
+            IConfigParser configParser,
+            IAptHelper aptHelper)
         {
             _gitCache = gitCache;
             _shellRunner = shellRunner;
             _buildCache = buildCache;
             _configParser = configParser;
+            _aptHelper = aptHelper;
         }
         
         public IWorkspace Load(string workspaceDirectory)
@@ -43,7 +43,7 @@ namespace AptRepoTool.Workspace.Impl
 
             var config = _configParser.LoadRootConfig(File.ReadAllText(configFile));
             var rootfsExecutor = GetRootfsExecutor(workspaceDirectory, config);
-            var workspace = new Workspace(workspaceDirectory, rootfsExecutor, _buildCache, _gitCache);
+            var workspace = new Workspace(workspaceDirectory, rootfsExecutor, _aptHelper);
             
             if (config.Components != null)
             {
@@ -93,7 +93,8 @@ namespace AptRepoTool.Workspace.Impl
                             workspace,
                             _buildCache,
                             _shellRunner,
-                            rootfsExecutor));
+                            rootfsExecutor,
+                            _aptHelper));
                     }
                 }
             }
@@ -174,7 +175,7 @@ namespace AptRepoTool.Workspace.Impl
             {
                 executor = new DockerRootfsExecutor(_shellRunner, dockerRootfsConfig, md5Sum, directory);
             }
-            else if (rootfsConfig is TarballRootfsConfig tarballRootfsConfig)
+            else if (rootfsConfig is TarballRootfsConfig)
             {
                 executor = new TarballRootfsExecutor(md5Sum, directory, _buildCache, _shellRunner);
             }
@@ -185,32 +186,5 @@ namespace AptRepoTool.Workspace.Impl
 
             return executor;
         }
-
-        // class RootfsConfigYaml
-        // {
-        //     public string Type { get; set; }
-        // }
-        //
-        // class RootConfigYaml
-        // {
-        //     public List<string> Components { get; set; }
-        //     
-        //     public string RootFs { get; set; }
-        // }
-        //
-        // class ComponentConfigYaml
-        // {
-        //     public string Url { get; set; }
-        //     
-        //     public string Branch { get; set; }
-        //     
-        //     public string Commit { get; set; }
-        //     
-        //     public List<string> Dependencies { get; set; }
-        //     
-        //     public string Type { get; set; }
-        //     
-        //     public string DebianDirectory { get; set; }
-        // }
     }
 }
