@@ -12,6 +12,8 @@ namespace AptRepoTool.Workspace
         public IComponent GetComponent(string name);
 
         public void BuildComponent(string name, ComponentBuildOptions options);
+
+        public List<IComponent> GetComponentDependencies(string name);
         
         void BuildRootfs(bool force);
 

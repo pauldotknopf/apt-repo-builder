@@ -9,6 +9,6 @@ namespace AptRepoTool.Rootfs
             Mounts = new List<MountedVolume>();
         }
         
-        public List<MountedVolume> Mounts { get; }
+        public List<MountedVolume> Mounts { get; set; }
     }
 }

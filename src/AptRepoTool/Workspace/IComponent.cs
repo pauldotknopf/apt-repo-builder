@@ -23,6 +23,8 @@ namespace AptRepoTool.Workspace
         void ExtractSource(string directory);
 
         void ExtractPackages(string directory);
+
+        string GetPackagesDirectory();
         
         void CalculateMD5Sum();
 

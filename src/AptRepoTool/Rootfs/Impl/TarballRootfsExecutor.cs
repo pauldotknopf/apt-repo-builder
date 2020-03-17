@@ -117,8 +117,20 @@ namespace AptRepoTool.Rootfs.Impl
                     foreach (var mount in options.Mounts)
                     {
                         var destination = Path.Combine(runnerOptions.WorkingDirectory, "rootfs") + mount.Target;
-                        _shellRunner.RunShell($"mkdir -p {destination} && mount -obind {mount.Source} {destination}", runnerOptions);
-                        mountedMounts.Add(destination);
+                        var isDir = (File.GetAttributes(mount.Source) & FileAttributes.Directory) == FileAttributes.Directory;
+                        if (isDir)
+                        {
+                            _shellRunner.RunShell($"mkdir -p {destination} && mount -obind {mount.Source} {destination}", runnerOptions);
+                            mountedMounts.Add(destination);
+                        }
+                        else
+                        {
+                            _shellRunner.RunShell($"mkdir -p {Path.GetDirectoryName(destination)} " +
+                                                  $"&& rm -rf {destination} " +
+                                                  $"&& touch {destination} " +
+                                                  $"&& mount -obind {mount.Source} {destination}", runnerOptions);
+                            mountedMounts.Add(destination);
+                        }
                     }
                 }
 

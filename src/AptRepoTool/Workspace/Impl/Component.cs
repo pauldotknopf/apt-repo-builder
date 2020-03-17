@@ -10,6 +10,7 @@ using AptRepoTool.Git;
 using AptRepoTool.Rootfs;
 using AptRepoTool.Shell;
 using Mono.Unix.Native;
+using Newtonsoft.Json;
 using Serilog;
 
 namespace AptRepoTool.Workspace.Impl
@@ -105,6 +106,16 @@ namespace AptRepoTool.Workspace.Impl
             _shellRunner.RunShell($"cp -rp {Path.Combine(packageCacheDirectory, "*")} {directory}");
         }
 
+        public string GetPackagesDirectory()
+        {
+            var packageCacheKey = $"packages-{Name}-{MD5}";
+            if (!_buildCache.HasCacheDirectory(packageCacheKey))
+            {
+                throw new AptRepoToolException($"Packages for {Name.Quoted()} are not available.");
+            }
+            return _buildCache.GetCacheDirectory(packageCacheKey);
+        }
+        
         public void CalculateMD5Sum()
         {
             if (!string.IsNullOrEmpty(MD5))
@@ -118,6 +129,7 @@ namespace AptRepoTool.Workspace.Impl
             }
             
             var hash = $"{SourceRev.Commit}{GitUrl}{_rootfsExecutor.MD5Sum}";
+            hash += JsonConvert.SerializeObject(_componentConfig);
             foreach (var dependency in Dependencies)
             {
                 var component = _workspace.GetComponent(dependency);
@@ -266,31 +278,68 @@ namespace AptRepoTool.Workspace.Impl
                 Syscall.chmod(scriptPath, FilePermissions.ACCESSPERMS);
             }
 
+            var mountedVolumes = new List<MountedVolume>
+            {
+                new MountedVolume
+                {
+                    Source = buildWorkingDirectory,
+                    Target = "/workspace/build"
+                },
+                new MountedVolume
+                {
+                    Source = scriptDirectory,
+                    Target = "/workspace/scripts"
+                },
+                new MountedVolume
+                {
+                    Source = gitDirectory,
+                    Target = "/workspace/git"
+                },
+                new MountedVolume
+                {
+                    Source = packagesDirectory,
+                    Target = "/workspace/packages"
+                }
+            };
+            
+            // Find all the dependent components so that we
+            // can mount there packages as an apt repo.
+            var dependentComponents = _workspace.GetComponentDependencies(Name);
+            if (dependentComponents.Count > 0)
+            {
+                Log.Information("Preparing the dependency apt repos.");
+                
+                var sourceListData = new StringBuilder();
+                foreach (var dependentComponent in dependentComponents)
+                {
+                    var sourcePackageRepo = dependentComponent.GetPackagesDirectory();
+                    var targetPackageRepo = $"/workspace/repo/{dependentComponent.Name}";
+                    mountedVolumes.Add(new MountedVolume
+                    {
+                        Source = sourcePackageRepo,
+                        Target = targetPackageRepo
+                    });
+                    sourceListData.AppendLine($"deb [trusted=yes] file:{targetPackageRepo} ./");
+                }
+                
+                // Right the apt repo source file
+                var aptSourceConfig = Path.Combine(buildDirectory.Dir, "dependencies.list");
+                if (File.Exists(aptSourceConfig))
+                {
+                    File.Delete(aptSourceConfig);
+                }
+                File.WriteAllText(aptSourceConfig, sourceListData.ToString());
+                
+                // Mount the dependencies.list file inside the rootfs
+                mountedVolumes.Add(new MountedVolume
+                {
+                    Source = aptSourceConfig,
+                    Target = "/etc/apt/sources.list.d/dependencies.list"
+                });
+            }
             using (var rootfsSession = _rootfsExecutor.StartSession(new RunOptions
             {
-                Mounts =
-                {
-                    new MountedVolume
-                    {
-                        Source = buildWorkingDirectory,
-                        Target = "/workspace/build"
-                    },
-                    new MountedVolume
-                    {
-                        Source = scriptDirectory,
-                        Target = "/workspace/scripts"
-                    },
-                    new MountedVolume
-                    {
-                        Source = gitDirectory,
-                        Target = "/workspace/git"
-                    },
-                    new MountedVolume
-                    {
-                        Source = packagesDirectory,
-                        Target = "/workspace/packages"
-                    }
-                }
+                Mounts = mountedVolumes
             }))
             {
                 Log.Information("Preparing the rootfs environment...");

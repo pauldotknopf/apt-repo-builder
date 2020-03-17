@@ -35,7 +35,7 @@ namespace AptRepoTool.Commands
 
             foreach (var component in workspace.Components)
             {
-                Log.Logger.Information($"Fetching sources for: {component.Name.Quoted()}.");
+                Log.Logger.Information("{component}", component.Name);
                 component.FetchSources();
             }
         }

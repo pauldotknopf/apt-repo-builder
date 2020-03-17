@@ -48,7 +48,21 @@ namespace AptRepoTool.Workspace.Impl
             {
                 options = new ComponentBuildOptions();
             }
+
+            BuildRootfs(false);
+
+            // Build all the dependencies
+            foreach (var dependency in GetComponentDependencies(name))
+            {
+                dependency.Build(options.ForceBuildDependencies, options.PromptBeforeBuild);
+            }
             
+            // Build the target component
+            GetComponent(name).Build(options.ForceBuild, options.PromptBeforeBuild);
+        }
+
+        public List<IComponent> GetComponentDependencies(string name)
+        {
             var sorted = new List<IComponent>();
             var visited = new Dictionary<string, bool>();
 
@@ -79,15 +93,7 @@ namespace AptRepoTool.Workspace.Impl
             
             Visit(GetComponent(name));
 
-            BuildRootfs(false);
-            
-            // Question, should we only force rebuild of the requested component? Or all dependencies?
-            foreach (var component in sorted)
-            {
-                component.Build(
-                    component.Name == name ? options.ForceBuild : options.ForceBuildDependencies,
-                    options.PromptBeforeBuild);
-            }
+            return sorted.Where(x => x.Name != name).ToList();
         }
 
         public void BuildRootfs(bool force)
