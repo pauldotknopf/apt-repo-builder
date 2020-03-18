@@ -5,6 +5,7 @@ using System.CommandLine.IO;
 using System.CommandLine.Parsing;
 using System.Reflection;
 using System.Threading.Tasks;
+using Mono.Unix.Native;
 using Serilog;
 
 namespace AptRepoTool
@@ -13,6 +14,9 @@ namespace AptRepoTool
     {
         static async Task<int> Main(string[] args)
         {
+            // Don't allow sigint. It could leave things in a damaged state.
+            Stdlib.SetSignalAction(Signum.SIGINT, SignalAction.Ignore);
+            
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
                 .CreateLogger();
@@ -29,7 +33,7 @@ namespace AptRepoTool
             rootCommand.Name = "apt-repo-tool";
             rootCommand.Description = "A tool to build an apt-repo from a deterministic set of inputs (git commits).";
 
-            var builder = new CommandLineBuilder(rootCommand);
+            var builder = new CommandLineBuilder(rootCommand).UseDefaults();
             builder.UseExceptionHandler((exception, context) =>
             {
                 void ProcessException(Exception ex)
@@ -41,6 +45,10 @@ namespace AptRepoTool
                         {
                             Log.Logger.Error(ex.InnerException, ex.InnerException.Message);
                         }
+                    }
+                    else if (ex is OperationCanceledException)
+                    {
+                        Log.Logger.Error("The process was cancelled.");
                     }
                     else if (ex is TargetInvocationException targetInvocationException)
                     {

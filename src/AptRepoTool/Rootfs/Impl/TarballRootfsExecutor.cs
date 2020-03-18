@@ -88,6 +88,8 @@ namespace AptRepoTool.Rootfs.Impl
 
         public IRootfsSession StartSession(RunOptions options)
         {
+            Log.Information("Building the rootfs environment...");
+            
             if (!_buildCache.HasCacheDirectory(GetRootfsCacheKey()))
             {
                 throw new AptRepoToolException($"The rootsf isn't build.");
@@ -107,6 +109,29 @@ namespace AptRepoTool.Rootfs.Impl
             
             try
             {
+                // Before we run, let's make sure there aren't dangling mounts from a previous build.
+                // /home/pknopf/git/apt-repo-tool-example/.build-cache/rootfs-run/rootfs/workspace/build
+                var mounts = _shellRunner.ReadShell("cat /proc/mounts");
+                var dangling = new List<string>();
+                using (var stringReader = new StringReader(mounts))
+                {
+                    var line = stringReader.ReadLine();
+                    while (line != null)
+                    {
+                        var split = line.Split(" ");
+                        if (split[1].StartsWith(runSession.Dir))
+                        {
+                            dangling.Add(split[1]);
+                        }
+                        line = stringReader.ReadLine();
+                    }
+                }
+                dangling.Reverse(); // Important to reverse, so that /dev/pts is unmounted before /dev
+                foreach (var danglingMount in dangling)
+                {
+                    Log.Warning("Dangling mount {mount} was found, unmounting before chroot.", danglingMount);
+                    _shellRunner.RunShell($"umount {danglingMount}", runnerOptions);
+                }
                 
                 _shellRunner.RunShell("find . -mindepth 1 -delete", runnerOptions);
                 _shellRunner.RunShell("mkdir rootfs", runnerOptions);

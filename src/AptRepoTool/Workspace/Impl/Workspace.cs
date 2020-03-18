@@ -106,6 +106,8 @@ namespace AptRepoTool.Workspace.Impl
             Log.Information("Cleaning {directory}...", directory);
             directory.CleanOrCreateDirectory();
 
+            Log.Information("Extracting all the components...");
+            
             foreach (var component in _components)
             {
                 component.ExtractPackages(directory);
