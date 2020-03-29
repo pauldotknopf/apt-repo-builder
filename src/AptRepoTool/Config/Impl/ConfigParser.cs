@@ -47,7 +47,8 @@ namespace AptRepoTool.Config.Impl
             var settings = new JsonSerializerSettings();
             settings.Converters.Add(JsonSubtypesConverterBuilder
                 .Of(typeof(ComponentConfig.Step), "Type") // type property is only defined here
-                .RegisterSubtype(typeof(ComponentConfig.DebianizedBuildStep), "debianized-build")
+                .RegisterSubtype(typeof(ComponentConfig.MakeOrigStep), "make-orig")
+                .RegisterSubtype(typeof(ComponentConfig.SourceBuildStep), "source-build")
                 .RegisterSubtype(typeof(ComponentConfig.BashStep), "bash")
                 .SetFallbackSubtype(typeof(UnknownStep))
                 .SerializeDiscriminatorProperty() // ask to serialize the type property

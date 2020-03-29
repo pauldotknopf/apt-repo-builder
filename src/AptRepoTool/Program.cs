@@ -14,9 +14,6 @@ namespace AptRepoTool
     {
         static async Task<int> Main(string[] args)
         {
-            // Don't allow sigint. It could leave things in a damaged state.
-            Stdlib.SetSignalAction(Signum.SIGINT, SignalAction.Ignore);
-            
             Log.Logger = new LoggerConfiguration()
                 .WriteTo.Console()
                 .CreateLogger();

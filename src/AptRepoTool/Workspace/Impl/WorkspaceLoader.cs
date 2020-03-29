@@ -94,7 +94,8 @@ namespace AptRepoTool.Workspace.Impl
                             _buildCache,
                             _shellRunner,
                             rootfsExecutor,
-                            _aptHelper));
+                            _aptHelper,
+                            config));
                     }
                 }
             }
@@ -136,20 +137,25 @@ namespace AptRepoTool.Workspace.Impl
 
         private IRootfsExecutor GetRootfsExecutor(string workspaceDirectory, RootConfig config)
         {
-            if (string.IsNullOrEmpty(config.Rootfs))
+            if (config.Rootfs == null)
             {
-                config.Rootfs = "rootfs";
+                config.Rootfs = new RootConfig.RootRootfsConfig();
+            }
+            
+            if (string.IsNullOrEmpty(config.Rootfs.Dir))
+            {
+                config.Rootfs.Dir = "rootfs";
             }
 
-            if (Path.IsPathRooted(config.Rootfs))
+            if (Path.IsPathRooted(config.Rootfs.Dir))
             {
-                throw new AptRepoToolException($"Invalid rootfs value {config.Rootfs.Quoted()}");
+                throw new AptRepoToolException($"Invalid rootfs value {config.Rootfs.Dir.Quoted()}");
             }
 
-            var directory = Path.Combine(workspaceDirectory, config.Rootfs);
+            var directory = Path.Combine(workspaceDirectory, config.Rootfs.Dir);
             if (!Directory.Exists(directory))
             {
-                throw new AptRepoToolException($"The rootfs directory {config.Rootfs.Quoted()} doesn't exist.");
+                throw new AptRepoToolException($"The rootfs directory {config.Rootfs.Dir.Quoted()} doesn't exist.");
             }
 
             var rootfsConfigPath = Path.Combine(directory, "config.yml");

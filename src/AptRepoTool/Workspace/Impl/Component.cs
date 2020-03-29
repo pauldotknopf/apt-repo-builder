@@ -24,6 +24,7 @@ namespace AptRepoTool.Workspace.Impl
         private readonly IShellRunner _shellRunner;
         private readonly IRootfsExecutor _rootfsExecutor;
         private readonly IAptHelper _aptHelper;
+        private readonly RootConfig _rootConfig;
 
         public Component(string name,
             ComponentConfig componentConfig,
@@ -32,7 +33,8 @@ namespace AptRepoTool.Workspace.Impl
             IBuildCache buildCache,
             IShellRunner shellRunner,
             IRootfsExecutor rootfsExecutor,
-            IAptHelper aptHelper)
+            IAptHelper aptHelper,
+            RootConfig rootConfig)
         {
             _componentConfig = componentConfig;
             _gitCache = gitCache;
@@ -41,6 +43,7 @@ namespace AptRepoTool.Workspace.Impl
             _shellRunner = shellRunner;
             _rootfsExecutor = rootfsExecutor;
             _aptHelper = aptHelper;
+            _rootConfig = rootConfig;
             name.NotNullOrEmpty(nameof(name));
             
             Name = name;
@@ -127,8 +130,15 @@ namespace AptRepoTool.Workspace.Impl
             {
                 ResolveUnknownCommit();
             }
+
+            var steps = JsonConvert.SerializeObject(_componentConfig.Steps ?? new List<ComponentConfig.Step>());
             
-            var hash = $"{SourceRev.Commit}{GitUrl}{_rootfsExecutor.MD5Sum}";
+            var hash = $"{SourceRev.Commit}{GitUrl}{steps.CalculateMD5Hash()}";
+            if (_rootConfig.Rootfs.RebuildComponentsOnChange)
+            {
+                hash += $"-{_rootfsExecutor.MD5Sum}";
+            }
+            
             hash += JsonConvert.SerializeObject(_componentConfig);
             foreach (var dependency in Dependencies)
             {
@@ -181,30 +191,36 @@ namespace AptRepoTool.Workspace.Impl
             var packagesDirectory = Path.Combine(buildDirectory.Dir, "packages");
             packagesDirectory.CleanOrCreateDirectory();
             
-            // Prepare the scripts directory (that will be ran in the image).
+            var userId = int.Parse(_shellRunner.ReadShell("id -u"));
+            
             var scripts = new Dictionary<string, StringBuilder>();
-            if (_componentConfig.Steps != null)
+
             {
-                // Switch to another user.
-                var userId = int.Parse(_shellRunner.ReadShell("id -u"));
                 var prepScript = scripts["prepare.sh"] = new StringBuilder();
                 prepScript.AppendLine("#!/usr/bin/env bash");
                 prepScript.AppendLine("set -e");
                 prepScript.AppendLine("export LANG=C");
                 prepScript.AppendLine("export LC_ALL=C");
-                prepScript.AppendLine($"useradd -u {userId} dummy");
-                prepScript.AppendLine("mkdir -p /home/dummy/.ssh");
-                prepScript.AppendLine("chown -R dummy:dummy /home/dummy");
-                prepScript.AppendLine("echo \"dummy ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/dummy");
+                if (userId != 0)
+                {
+                    prepScript.AppendLine($"useradd -u {userId} dummy");
+                    prepScript.AppendLine("mkdir -p /home/dummy/.ssh");
+                    prepScript.AppendLine("chown -R dummy:dummy /home/dummy");
+                    prepScript.AppendLine("echo \"dummy ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/dummy");
+                }
+
                 prepScript.AppendLine("apt-get update");
-                
-                var entryScript = scripts["entry.sh"] = new StringBuilder();
-                entryScript.AppendLine("#!/usr/bin/env bash");
-                entryScript.AppendLine("set -e");
-                entryScript.AppendLine("export LANG=C");
-                entryScript.AppendLine("export LC_ALL=C");
-                
-                entryScript.AppendLine("cd /workspace/scripts");
+            }
+
+            var entryScript = scripts["entry.sh"] = new StringBuilder();
+            entryScript.AppendLine("#!/usr/bin/env bash");
+            entryScript.AppendLine("set -e");
+            entryScript.AppendLine("export LANG=C");
+            entryScript.AppendLine("export LC_ALL=C");
+            entryScript.AppendLine("cd /workspace/scripts");
+            
+            if (_componentConfig.Steps != null)
+            {
                 var number = 1;
                 foreach (var step in _componentConfig.Steps)
                 {
@@ -213,48 +229,49 @@ namespace AptRepoTool.Workspace.Impl
                     stepScript.AppendLine("#!/usr/bin/env bash");
                     stepScript.AppendLine("set -e");
                     entryScript.AppendLine($"./{stepScriptName}");
-                    if (step is ComponentConfig.DebianizedBuildStep debianizedBuildStep)
+
+                    if (step is ComponentConfig.MakeOrigStep makeOrigStep)
                     {
                         var targetDirectory = "/workspace/git";
-                        if (!string.IsNullOrEmpty(debianizedBuildStep.Folder))
+                        if (!string.IsNullOrEmpty(makeOrigStep.Folder))
                         {
-                            if (Path.IsPathRooted(debianizedBuildStep.Folder))
+                            if (Path.IsPathRooted(makeOrigStep.Folder))
                             {
                                 throw new AptRepoToolException($"Invalid {"folder".Quoted()} field.");
                             }
-                            targetDirectory = Path.Combine(targetDirectory, debianizedBuildStep.Folder);
+
+                            targetDirectory = Path.Combine(targetDirectory, makeOrigStep.Folder);
                         }
                         
-                        // Build the source package
                         stepScript.AppendLine(". /usr/lib/pbuilder/pbuilder-buildpackage-funcs");
                         stepScript.AppendLine($"cd {targetDirectory.Quoted()}");
                         stepScript.AppendLine("export VERSION=$(dpkg-parsechangelog -l debian/changelog -S Version)");
                         stepScript.AppendLine("export SOURCE=$(dpkg-parsechangelog -l debian/changelog -S Source)");
                         stepScript.AppendLine("export VERSION_BASE=$(perl -e \"use Dpkg::Version; printf Dpkg::Version->new(\\\"${VERSION}\\\")->as_string(omit_epoch => 1, omit_revision => 1);\")");
-                        stepScript.AppendLine("export SOURCE_TARBALL_NAME=\"${SOURCE}_${VERSION_BASE}.orig.tar.xz\"");
+                        stepScript.AppendLine("export SOURCE_TARBALL_PATH=\"../${SOURCE}_${VERSION_BASE}.orig.tar.xz\"");
                         stepScript.AppendLine("export DSC_FILE_NAME=\"${SOURCE}_${VERSION}.dsc\"");
                         stepScript.AppendLine("export CHANGES_ARCHITECTURE=$(dpkg-architecture -qDEB_HOST_ARCH)");
-                        stepScript.AppendLine("if [ ! -f \"../${SOURCE_TARBALL_NAME}\" ]; then");
-                        stepScript.AppendLine("  tar cfJ ../${SOURCE_TARBALL_NAME} --exclude=\"./debian*\" . --transform \"s,^,${SOURCE}_${VERSION_BASE}/,\"");
-                        stepScript.AppendLine("fi");
+                        stepScript.AppendLine("tar cfJ ${SOURCE_TARBALL_PATH} --exclude=\"./debian*\" . --transform \"s,^,${SOURCE}_${VERSION_BASE}/,\"");
+                    }
+                    else if (step is ComponentConfig.SourceBuildStep sourceBuildStep)
+                    {
+                        var targetDirectory = "/workspace/git";
+                        if (!string.IsNullOrEmpty(sourceBuildStep.Folder))
+                        {
+                            if (Path.IsPathRooted(sourceBuildStep.Folder))
+                            {
+                                throw new AptRepoToolException($"Invalid {"folder".Quoted()} field.");
+                            }
+
+                            targetDirectory = Path.Combine(targetDirectory, sourceBuildStep.Folder);
+                        }
+                        
+                        stepScript.AppendLine(". /usr/lib/pbuilder/pbuilder-buildpackage-funcs");
+                        stepScript.AppendLine($"cd {targetDirectory.Quoted()}");
+                        stepScript.AppendLine("export VERSION=$(dpkg-parsechangelog -l debian/changelog -S Version)");
+                        stepScript.AppendLine("export SOURCE=$(dpkg-parsechangelog -l debian/changelog -S Source)");
                         stepScript.AppendLine("dpkg-source -b .");
-                        
-                        // Now, let's build that source package.
                         stepScript.AppendLine("copydsc ../${SOURCE}_${VERSION}.dsc ${ARB_BUILD_DIR}");
-                        stepScript.AppendLine("cd ${ARB_BUILD_DIR}");
-                        stepScript.AppendLine("dpkg-source -x ${DSC_FILE_NAME} working");
-                        stepScript.AppendLine("cd working");
-                        stepScript.AppendLine("sudo /usr/lib/pbuilder/pbuilder-satisfydepends");
-                        stepScript.AppendLine("fakeroot dpkg-buildpackage -us -uc");
-                        
-                        // Copy the build outputs to the packages directory.
-                        stepScript.AppendLine("CHANGES_BASENAME=$(dsc_get_basename \"../${DSC_FILE_NAME}\" \"yes\")");
-                        stepScript.AppendLine("FILES=$(get822files \"changes\" \"../${CHANGES_BASENAME}_${CHANGES_ARCHITECTURE}.changes\")");
-                        stepScript.AppendLine("for FILE in $FILES; do");
-                        stepScript.AppendLine("  if [ -f \"${FILE}\" ]; then");
-                        stepScript.AppendLine("    cp -p \"${FILE}\" \"${ARB_PACKAGES_DIR}\"");
-                        stepScript.AppendLine("  fi");
-                        stepScript.AppendLine("done");
                     }
                     else if (step is ComponentConfig.BashStep bashStep)
                     {
@@ -264,9 +281,43 @@ namespace AptRepoTool.Workspace.Impl
                     }
                     else
                     {
-                        throw new NotImplementedException();
+                        throw new NotSupportedException();
                     }
                 }
+            }
+
+            // Build the script that will build the packages.
+            {
+                entryScript.AppendLine("./build.sh");
+
+                var stepScript = scripts["build.sh"] = new StringBuilder();
+                stepScript.AppendLine("#!/usr/bin/env bash");
+                stepScript.AppendLine("set -e");
+                stepScript.AppendLine(". /usr/lib/pbuilder/pbuilder-buildpackage-funcs");
+                
+                // Find the path to the dsc file.
+                stepScript.AppendLine("export CHANGES_ARCHITECTURE=$(dpkg-architecture -qDEB_HOST_ARCH)");
+                stepScript.AppendLine("cd ${ARB_BUILD_DIR}");
+                stepScript.AppendLine("DSC_FILES=(*.dsc)");
+                stepScript.AppendLine("DSC_FILE=${DSC_FILES[0]}");
+                stepScript.AppendLine("if [ ! -f ${dsc_file} ]; then");
+                stepScript.AppendLine("  echo \"There was no .dsc file found in ARB_BUILD_DIR\"");
+                stepScript.AppendLine("fi");
+                
+                // Build the package.
+                stepScript.AppendLine("dpkg-source -x ${DSC_FILE} working");
+                stepScript.AppendLine("cd working");
+                stepScript.AppendLine("sudo /usr/lib/pbuilder/pbuilder-satisfydepends");
+                stepScript.AppendLine("fakeroot dpkg-buildpackage -us -uc");
+                
+                // Copy the build outputs to the packages directory.
+                stepScript.AppendLine("CHANGES_BASENAME=$(dsc_get_basename \"../${DSC_FILE}\" \"yes\")");
+                stepScript.AppendLine("FILES=$(get822files \"changes\" \"../${CHANGES_BASENAME}_${CHANGES_ARCHITECTURE}.changes\")");
+                stepScript.AppendLine("for FILE in $FILES; do");
+                stepScript.AppendLine("  if [ -f \"${FILE}\" ]; then");
+                stepScript.AppendLine("    cp -p \"${FILE}\" \"${ARB_PACKAGES_DIR}\"");
+                stepScript.AppendLine("  fi");
+                stepScript.AppendLine("done");
             }
 
             var scriptDirectory = Path.Combine(buildDirectory.Dir, "scripts");
@@ -345,6 +396,8 @@ namespace AptRepoTool.Workspace.Impl
                 Log.Information("Preparing the rootfs environment...");
                 rootfsSession.Run("/workspace/scripts/prepare.sh");
 
+                rootfsSession.Run("chmod +777 /workspace");
+                
                 var env = new Dictionary<string, string>
                 {
                     {"ARB_BUILD_DIR", "/workspace/build"},
@@ -360,11 +413,11 @@ namespace AptRepoTool.Workspace.Impl
                     // a bash prompt to poke around before the scripts are run.
                     Log.Warning("Starting a bash prompt before building {component}.", Name);
                     Log.Warning("The script {script} will be ran after exiting the prompt.", containerEntry);
-                    rootfsSession.Run("su dummy -c bash", env);
+                    rootfsSession.Run(userId == 0 ? "bash" : "su dummy -c bash", env);
                 }
                 
                 Log.Logger.Information("Running build steps...");
-                rootfsSession.Run($"su dummy -c \"{containerEntry}\"", env);
+                rootfsSession.Run(userId == 0 ? $"{containerEntry}" : $"su dummy -c \"{containerEntry}\"", env);
             }
             
             using (var packagesCache = _buildCache.StartSession($"packages-{Name}-{MD5}", true))

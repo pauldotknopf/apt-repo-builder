@@ -26,21 +26,28 @@ namespace AptRepoTool.Config
         }
 
         /// <summary>
-        /// This type will indicate that the workspace we are looking at represents
-        /// a repo that has source code, along with a "debian" folder.
-        /// We will do a few things.
-        /// 1. Generate the source tarball.
-        /// 2. Build a source package.
-        /// 3. Build the binaries.
-        /// 4. Copy them to the COMPONENT_OUTPUT_DIR directory.
+        /// The step will create an "orig" tar ball.
+        /// This is needed when using "3.0 (quilt)",
+        /// which requires source builds to have an
+        /// orig.tar.xz
         /// </summary>
-        public class DebianizedBuildStep : Step
+        public class MakeOrigStep : Step
         {
-            public override string Type => "debianized-build";
+            public override string Type => "make-orig";
 
             public string Folder { get; set; }
         }
-
+        
+        /// <summary>
+        /// This type will look for a dsc file, and extract/build it.
+        /// </summary>
+        public class SourceBuildStep : Step
+        {
+            public override string Type => "source-build";
+            
+            public string Folder { get; set; }
+        }
+        
         /// <summary>
         /// This will simply run a bash script.
         /// </summary>
