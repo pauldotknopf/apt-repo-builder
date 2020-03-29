@@ -1,0 +1,12 @@
+Source: apt-repo-builder
+Section: unknown
+Priority: optional
+Maintainer: Paul Knopf <pauldotknopf@gmail.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Homepage: https://github.com/pauldotknopf/apt-repo-builder
+
+Package: apt-repo-builder
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: A tool to build packages and apt repositories.
