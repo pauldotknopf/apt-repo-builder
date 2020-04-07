@@ -18,5 +18,9 @@ namespace AptRepoBuilder.Workspace
         void BuildRootfs(bool force);
 
         void PublishRepo(string directory);
+
+        void PublishCache();
+        
+        string CacheDirectory { get; }
     }
 }

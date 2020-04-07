@@ -24,6 +24,10 @@ namespace AptRepoBuilder.Workspace
 
         void ExtractPackages(string directory);
 
+        void CheckCache(string directory);
+        
+        void PublishCache(string directory);
+        
         string GetPackagesDirectory();
         
         void CalculateMD5Sum();

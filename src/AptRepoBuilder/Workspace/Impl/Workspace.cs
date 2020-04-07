@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using AptRepoBuilder.Apt;
 using AptRepoBuilder.Rootfs;
@@ -10,14 +11,17 @@ namespace AptRepoBuilder.Workspace.Impl
 {
     public class Workspace : IWorkspace
     {
+        private readonly string _cacheDirectory;
         private readonly IRootfsExecutor _rootfsExecutor;
         private readonly IAptHelper _aptHelper;
         private List<IComponent> _components = new List<IComponent>();
 
         public Workspace(string rootDirectory,
+            string cacheDirectory,
             IRootfsExecutor rootfsExecutor,
             IAptHelper aptHelper)
         {
+            _cacheDirectory = cacheDirectory;
             _rootfsExecutor = rootfsExecutor;
             _aptHelper = aptHelper;
             RootDirectory = rootDirectory;
@@ -96,6 +100,10 @@ namespace AptRepoBuilder.Workspace.Impl
 
         public void BuildRootfs(bool force)
         {
+            if (!string.IsNullOrEmpty(_cacheDirectory))
+            {
+                _rootfsExecutor.CheckCache(_cacheDirectory);
+            }
             _rootfsExecutor.BuildRoot(force);
         }
 
@@ -114,6 +122,31 @@ namespace AptRepoBuilder.Workspace.Impl
             Log.Information("Indexing all source/binary packages...");
             _aptHelper.ScanSourcesAndPackages(directory);
         }
+
+        public void PublishCache()
+        {
+            if (string.IsNullOrEmpty(_cacheDirectory))
+            {
+                throw new AptRepoToolException($"You must specify a {"cache".Quoted()} value.");
+            }
+
+            if (!Directory.Exists(_cacheDirectory))
+            {
+                Log.Information("Creating {directory}...", _cacheDirectory);
+                Directory.CreateDirectory(_cacheDirectory);
+            }
+
+            // Publish the rootfs
+            _rootfsExecutor.PublishCache(_cacheDirectory);
+
+            // Publish each component.
+            foreach (var component in Components)
+            {
+                component.PublishCache(_cacheDirectory);
+            }
+        }
+
+        public string CacheDirectory => _cacheDirectory;
 
         public void AddComponent(IComponent component)
         {

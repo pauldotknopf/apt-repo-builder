@@ -43,7 +43,16 @@ namespace AptRepoBuilder.Workspace.Impl
 
             var config = _configParser.LoadRootConfig(File.ReadAllText(configFile));
             var rootfsExecutor = GetRootfsExecutor(workspaceDirectory, config);
-            var workspace = new Workspace(workspaceDirectory, rootfsExecutor, _aptHelper);
+            var cacheDirectory = config.Cache;
+            if (!string.IsNullOrEmpty(cacheDirectory))
+            {
+                if (!Path.IsPathRooted(cacheDirectory))
+                {
+                    cacheDirectory = Path.Combine(workspaceDirectory, cacheDirectory);
+                }
+                cacheDirectory = Path.GetFullPath(cacheDirectory);
+            }
+            var workspace = new Workspace(workspaceDirectory, cacheDirectory, rootfsExecutor, _aptHelper);
             
             if (config.Components != null)
             {

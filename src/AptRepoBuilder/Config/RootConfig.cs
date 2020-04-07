@@ -7,8 +7,10 @@ namespace AptRepoBuilder.Config
     {
         public List<string> Components { get; set; }
         
+        public string Cache { get; set; }
+        
         public RootRootfsConfig Rootfs { get; set; }
-
+        
         public class RootRootfsConfig
         {
             public RootRootfsConfig()
