@@ -46,6 +46,7 @@ namespace AptRepoBuilder.Rootfs.Impl
             }
             else
             {
+                // Let's see if the rootfs exists in the cache.
                 Log.Information("Building rootfs...");
             }
 
@@ -84,6 +85,55 @@ namespace AptRepoBuilder.Rootfs.Impl
                 
                 buildCache.Commit();
             }
+        }
+
+        public void CheckCache(string directory)
+        {
+            var buildKey = $"rootfs-{MD5Sum}";
+           
+            if (_buildCache.HasCacheDirectory(buildKey))
+            {
+                // No need to check cache, we have it locally already.
+                return;
+            }
+
+            var cacheFile = Path.Combine(directory, $"{buildKey}.tar.gz");
+            if (File.Exists(cacheFile))
+            {
+                Log.Information("Restoring rootfs from cache...");
+                using (var buildCache = _buildCache.StartSession(buildKey, true))
+                {
+                    File.Copy(cacheFile, Path.Combine(buildCache.Dir, "rootfs.tar.gz"));
+                    buildCache.Commit();
+                }
+                Log.Information("Successfully restored rootfs from cache.");
+            }
+        }
+
+        public void PublishCache(string directory)
+        {
+            Log.Information("Publishing the rootfs into the cache...");
+            var buildKey = $"rootfs-{MD5Sum}";
+
+            var cacheDestination = Path.Combine(directory, $"{buildKey}.tar.gz");
+            if (File.Exists(cacheDestination))
+            {
+                Log.Information("The rootfs already exists in the cache, ignoring...");
+                return;
+            }
+            
+            if (!_buildCache.HasCacheDirectory(buildKey))
+            {
+                throw new AptRepoToolException("The rootfs has not been built.");
+            }
+
+            var cacheDestinationTmp = $"{cacheDestination}.tmp";
+            if (File.Exists(cacheDestinationTmp))
+            {
+                File.Delete(cacheDestinationTmp);
+            }
+            File.Copy(Path.Combine(_buildCache.GetCacheDirectory(buildKey), "rootfs.tar.gz"), cacheDestinationTmp);
+            File.Move(cacheDestinationTmp, cacheDestination);
         }
 
         public IRootfsSession StartSession(RunOptions options)

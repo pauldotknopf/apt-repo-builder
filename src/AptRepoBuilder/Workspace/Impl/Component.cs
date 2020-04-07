@@ -109,6 +109,59 @@ namespace AptRepoBuilder.Workspace.Impl
             _shellRunner.RunShell($"cp -rp {Path.Combine(packageCacheDirectory, "*")} {directory}");
         }
 
+        public void CheckCache(string directory)
+        {
+            var packageCacheKey = $"packages-{Name}-{MD5}";
+            if (_buildCache.HasCacheDirectory(packageCacheKey))
+            {
+                // No need to check cache, we already have it locally.
+                return;
+            }
+            
+            var cacheFile = Path.Combine(directory, $"{packageCacheKey}.tar.gz");
+            if (File.Exists(cacheFile))
+            {
+                Log.Information($"Restoring {Name.Quoted()} from cache...");
+                using (var buildCache = _buildCache.StartSession(packageCacheKey, true))
+                {
+                    _shellRunner.RunShell($"tar -xf {cacheFile.Quoted()} -C {buildCache.Dir.Quoted()}");
+                    buildCache.Commit();
+                }
+                Log.Information($"Sucessfully restored {Name.Quoted()} from cache.");
+            }
+        }
+        
+        public void PublishCache(string directory)
+        {
+            Log.Information($"Publishing {Name.Quoted()} into the cache...");
+            
+            CalculateMD5Sum();
+            var packageCacheKey = $"packages-{Name}-{MD5}";
+            
+            // Check if it is already cached.
+            var destinationCacheFile = Path.Combine(directory, $"{packageCacheKey}.tar.gz");
+            if (File.Exists(destinationCacheFile))
+            {
+                Log.Information($"The package {Name.Quoted()} is already cached.");
+                return;
+            }
+            
+            // Check if we have it built locally.
+            if (!_buildCache.HasCacheDirectory(packageCacheKey))
+            {
+                throw new AptRepoToolException($"The package {Name.Quoted()}, hasn't been built, can't publish cache.");
+            }
+            
+            // Let's package up this directory and move it to the cache.
+            var destinationCacheFileTmp = $"{destinationCacheFile}.tmp";
+            if (File.Exists(destinationCacheFileTmp))
+            {
+                File.Delete(destinationCacheFileTmp);
+            }
+            _shellRunner.RunShell($"tar -C {_buildCache.GetCacheDirectory(packageCacheKey).Quoted()} -czf {destinationCacheFileTmp.Quoted()} .");
+            File.Move(destinationCacheFileTmp, destinationCacheFile);
+        }
+
         public string GetPackagesDirectory()
         {
             var packageCacheKey = $"packages-{Name}-{MD5}";
@@ -153,10 +206,15 @@ namespace AptRepoBuilder.Workspace.Impl
         public void Build(bool force, bool bashPrompt)
         {
             Log.Information("Building {component}...", Name);
-            
+
             // Ensure all commits are resolved, and all dependencies have calculated their MD5.
             CalculateMD5Sum();
-
+            
+            if (!string.IsNullOrEmpty(_workspace.CacheDirectory))
+            {
+                CheckCache(_workspace.CacheDirectory);
+            }
+            
             if (_buildCache.HasCacheDirectory($"packages-{Name}-{MD5}"))
             {
                 // This component was already built, and it's outputs are available.
