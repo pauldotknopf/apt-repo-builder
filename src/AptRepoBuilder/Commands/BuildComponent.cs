@@ -1,3 +1,4 @@
+using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using AptRepoBuilder.Workspace;
@@ -22,6 +23,11 @@ namespace AptRepoBuilder.Commands
                     Name = "force",
                     Argument = new Argument<bool>()
                 },
+                new Option(new []{"--disable-latest"})
+                {
+                    Name = "disable-latest",
+                    Argument = new Argument<bool>()
+                },
                 new Option(new []{"-fd", "--force-dependencies"})
                 {
                     Name = "force-dependencies",
@@ -39,7 +45,7 @@ namespace AptRepoBuilder.Commands
             return command;
         }
         
-        public static void Run(string name, bool force, bool forceDependencies, bool promptBeforeBuild, string workspaceDirectory)
+        public static void Run(string name, bool force, bool disableLatest, bool forceDependencies, bool promptBeforeBuild, string workspaceDirectory)
         {
             if (string.IsNullOrEmpty(name))
             {
@@ -51,6 +57,11 @@ namespace AptRepoBuilder.Commands
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
+            if (disableLatest || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APT_REPO_BUILDER_DISABLE_LATEST")))
+            {
+                workspace.AssertFixedCommits();
+            }
+            
             workspace.BuildComponent(name, new ComponentBuildOptions
             {
                 ForceBuild = force,

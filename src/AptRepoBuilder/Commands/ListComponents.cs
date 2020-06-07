@@ -34,7 +34,6 @@ namespace AptRepoBuilder.Commands
             foreach (var component in workspace.Components)
             {
                 Log.Logger.Information("{component}", component.Name);
-                component.FetchSources();
             }
         }
     }

@@ -148,6 +148,24 @@ namespace AptRepoBuilder.Workspace.Impl
 
         public string CacheDirectory => _cacheDirectory;
 
+        public void AssertFixedCommits()
+        {
+            bool foundLatest = false;
+            foreach (var component in Components)
+            {
+                if (component.SourceRev.Type == ComponentSrcRevType.Latest)
+                {
+                    Log.Error("The component {component} is referencing \"latest\" as a commit.", component.Name);
+                    foundLatest = true;
+                }
+            }
+
+            if (foundLatest)
+            {
+                throw new AptRepoToolException("One or more components were referencing \"latest\" as a commit.");
+            }
+        }
+        
         public void AddComponent(IComponent component)
         {
             if (_components.Any(x => x.Name == component.Name))

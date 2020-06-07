@@ -22,5 +22,7 @@ namespace AptRepoBuilder.Workspace
         void PublishCache();
         
         string CacheDirectory { get; }
+
+        void AssertFixedCommits();
     }
 }

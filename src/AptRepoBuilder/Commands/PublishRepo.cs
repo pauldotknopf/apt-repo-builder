@@ -1,3 +1,4 @@
+using System;
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.IO;
@@ -22,6 +23,11 @@ namespace AptRepoBuilder.Commands
                 {
                     Name = "output",
                     Argument = new Argument<string>()
+                },
+                new Option(new []{"--disable-latest"})
+                {
+                    Name = "disable-latest",
+                    Argument = new Argument<bool>()
                 }
             };
 
@@ -30,7 +36,7 @@ namespace AptRepoBuilder.Commands
             return command;
         }
         
-        public static void Run(string workspaceDirectory, string output)
+        public static void Run(string workspaceDirectory, string output, bool disableLatest)
         {
             workspaceDirectory = Helpers.GetWorkspaceDirectory(workspaceDirectory);
             if (string.IsNullOrEmpty(output))
@@ -43,6 +49,11 @@ namespace AptRepoBuilder.Commands
             var workspace = Helpers.BuildServiceProvider(workspaceDirectory).GetRequiredService<IWorkspaceLoader>()
                 .Load(workspaceDirectory);
 
+            if (disableLatest || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("APT_REPO_BUILDER_DISABLE_LATEST")))
+            {
+                workspace.AssertFixedCommits();
+            }
+            
             workspace.BuildRootfs(false);
 
             foreach (var component in workspace.Components)
