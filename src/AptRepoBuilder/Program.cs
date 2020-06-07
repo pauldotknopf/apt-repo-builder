@@ -25,7 +25,8 @@ namespace AptRepoBuilder
                 BuildComponent.Create(),
                 BuildAll.Create(),
                 PublishRepo.Create(),
-                PublishCache.Create()
+                PublishCache.Create(),
+                ListCommits.Create()
             };
             rootCommand.Name = "apt-repo-tool";
             rootCommand.Description = "A tool to build an apt-repo from a deterministic set of inputs (git commits).";
