@@ -74,8 +74,8 @@ namespace AptRepoBuilder.Config.Impl
         public List<SourceOverrideConfig> LoadSourceOverrides(string yaml)
         {
             var json = ConvertToJson(yaml);
-            
-            return JsonConvert.DeserializeObject<List<SourceOverrideConfig>>(json);
+
+            return JsonConvert.DeserializeObject<List<SourceOverrideConfig>>(json) ?? new List<SourceOverrideConfig>();
         }
 
         private string ConvertToJson(string yaml)
