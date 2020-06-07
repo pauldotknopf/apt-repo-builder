@@ -28,7 +28,12 @@ namespace AptRepoBuilder.Commands
                 {
                     Name = "disable-latest",
                     Argument = new Argument<bool>()
-                }
+                },
+                new Option(new []{"--publish-cache"})
+                {
+                    Name = "publish-cache",
+                    Argument = new Argument<bool>()
+                },
             };
 
             command.Handler = CommandHandler.Create(typeof(PublishRepo).GetMethod(nameof(Run)));
@@ -36,7 +41,7 @@ namespace AptRepoBuilder.Commands
             return command;
         }
         
-        public static void Run(string workspaceDirectory, string output, bool disableLatest)
+        public static void Run(string workspaceDirectory, string output, bool disableLatest, bool publishCache)
         {
             workspaceDirectory = Helpers.GetWorkspaceDirectory(workspaceDirectory);
             if (string.IsNullOrEmpty(output))
@@ -62,6 +67,11 @@ namespace AptRepoBuilder.Commands
             }
             
             workspace.PublishRepo(output);
+
+            if (publishCache)
+            {
+                workspace.PublishCache();
+            }
         }
     }
 }
