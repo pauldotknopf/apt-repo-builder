@@ -191,8 +191,6 @@ namespace AptRepoBuilder.Workspace.Impl
             {
                 hash += $"-{_rootfsExecutor.MD5Sum}";
             }
-            
-            hash += JsonConvert.SerializeObject(_componentConfig);
             foreach (var dependency in Dependencies)
             {
                 var component = _workspace.GetComponent(dependency);
