@@ -177,7 +177,7 @@ namespace AptRepoBuilder.Workspace.Impl
             IRootfsExecutor executor;
 
             // Generate md5sum of entire directory, but ignore the ./tmp directory.
-            var md5Sum = _shellRunner.ReadShell("find -type f -not -path \"./tmp/*\" -exec md5sum {} \\; | md5sum",
+            var md5Sum = _shellRunner.ReadShell("find -type f -not -path \"./tmp/*\" -exec md5sum {} \\; | sort | md5sum",
                 new RunnerOptions
                 {
                     WorkingDirectory = directory
