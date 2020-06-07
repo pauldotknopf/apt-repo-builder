@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace AptRepoBuilder.Config
 {
     public interface IConfigParser
@@ -7,5 +9,7 @@ namespace AptRepoBuilder.Config
         RootfsConfig LoadRootfsConfig(string yaml);
 
         ComponentConfig LoadComponentConfig(string yaml);
+
+        List<SourceOverrideConfig> LoadSourceOverrides(string yaml);
     }
 }

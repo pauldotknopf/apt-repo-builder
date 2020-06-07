@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AptRepoBuilder.Apt;
 using AptRepoBuilder.BuildCache;
 using AptRepoBuilder.Config;
@@ -53,6 +54,63 @@ namespace AptRepoBuilder.Workspace.Impl
                 cacheDirectory = Path.GetFullPath(cacheDirectory);
             }
             var workspace = new Workspace(workspaceDirectory, cacheDirectory, rootfsExecutor, _aptHelper);
+
+            var sourceOverrides = new List<SourceOverrideConfig>();
+            {
+                var sourceOverrideFiles = new List<string>();
+                if (config.SourceOverrides != null)
+                {
+                    foreach (var sourceOverrideFile in config.SourceOverrides)
+                    {
+                        var sourceOverrideFilePath = sourceOverrideFile;
+                        if (!Path.IsPathRooted(sourceOverrideFilePath))
+                        {
+                            sourceOverrideFilePath = Path.Combine(workspaceDirectory, sourceOverrideFilePath);
+                        }
+                        sourceOverrideFilePath = Path.GetFullPath(sourceOverrideFilePath);
+                        if (!File.Exists(sourceOverrideFilePath))
+                        {
+                            throw new AptRepoToolException($"The source override file \"{sourceOverrideFile}\" doesn't exist.");
+                        }
+                        sourceOverrideFiles.Add(sourceOverrideFile);
+                    }
+                }
+
+                foreach (var sourceOverrideFile in sourceOverrideFiles)
+                {
+                    foreach (var sourceOverride in _configParser.LoadSourceOverrides(
+                        File.ReadAllText(sourceOverrideFile)))
+                    {
+                        if (string.IsNullOrEmpty(sourceOverride.Component))
+                        {
+                            throw new AptRepoToolException("Souce override file missing component name.");
+                        }
+
+                        if (string.IsNullOrEmpty(sourceOverride.Branch) && string.IsNullOrEmpty(sourceOverride.Commit))
+                        {
+                            throw new AptRepoToolException($"Source override for \"{sourceOverride.Component}\" must contain either a branch or commit.");
+                        }
+                        
+                        var existingSourceOverride =
+                            sourceOverrides.SingleOrDefault(x => x.Component == sourceOverride.Component);
+                        if (existingSourceOverride == null)
+                        {
+                            existingSourceOverride = sourceOverride;
+                            sourceOverrides.Add(sourceOverride);
+                        }
+
+                        if (!string.IsNullOrEmpty(sourceOverride.Branch))
+                        {
+                            existingSourceOverride.Branch = sourceOverride.Branch;
+                        }
+
+                        if (!string.IsNullOrEmpty(sourceOverride.Commit))
+                        {
+                            existingSourceOverride.Commit = sourceOverride.Commit;
+                        }
+                    }
+                }
+            }
             
             if (config.Components != null)
             {
@@ -96,6 +154,21 @@ namespace AptRepoBuilder.Workspace.Impl
                         {
                             throw new AptRepoToolException($"No {"commit".Quoted()} provided for {componentName.Quoted()}.");
                         }
+                        
+                        // Check to see if we override the commit or branch
+                        var sourceOverride = sourceOverrides.SingleOrDefault(x => x.Component == componentName);
+                        if (sourceOverride != null)
+                        {
+                            if (!string.IsNullOrEmpty(sourceOverride.Branch))
+                            {
+                                componentConfig.Source.Branch = sourceOverride.Branch;
+                            }
+                            if (!string.IsNullOrEmpty(sourceOverride.Commit))
+                            {
+                                componentConfig.Source.Commit = sourceOverride.Commit;
+                            }
+                        }
+                        
                         workspace.AddComponent(new Component(componentName,
                             componentConfig,
                             _gitCache,
@@ -106,6 +179,15 @@ namespace AptRepoBuilder.Workspace.Impl
                             _aptHelper,
                             config));
                     }
+                }
+            }
+            
+            // Validate that there weren't any source overrides for components that don't exist.
+            foreach (var sourceOverride in sourceOverrides)
+            {
+                if(workspace.Components.All(x => x.Name != sourceOverride.Component))
+                {
+                    throw new AptRepoToolException($"A source override was provided for component \"{sourceOverride.Component}\", but it doesn't exist.");
                 }
             }
             

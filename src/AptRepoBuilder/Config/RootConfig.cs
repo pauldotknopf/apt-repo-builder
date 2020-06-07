@@ -23,5 +23,8 @@ namespace AptRepoBuilder.Config
             [JsonProperty("rebuild-components-on-change")]
             public bool RebuildComponentsOnChange { get; set; }
         }
+        
+        [JsonProperty("source-overrides")]
+        public List<string> SourceOverrides { get; set; }
     }
 }

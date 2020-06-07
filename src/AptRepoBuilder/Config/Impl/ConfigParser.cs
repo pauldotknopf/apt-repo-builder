@@ -2,6 +2,7 @@ using System.IO;
 using JsonSubTypes;
 using Newtonsoft.Json;
 using YamlDotNet.Serialization;
+using System.Collections.Generic;
 
 namespace AptRepoBuilder.Config.Impl
 {
@@ -68,6 +69,13 @@ namespace AptRepoBuilder.Config.Impl
             }
 
             return result;
+        }
+
+        public List<SourceOverrideConfig> LoadSourceOverrides(string yaml)
+        {
+            var json = ConvertToJson(yaml);
+            
+            return JsonConvert.DeserializeObject<List<SourceOverrideConfig>>(json);
         }
 
         private string ConvertToJson(string yaml)
