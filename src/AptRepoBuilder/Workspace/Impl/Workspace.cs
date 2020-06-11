@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using AptRepoBuilder.Apt;
 using AptRepoBuilder.Rootfs;
 using Serilog;
@@ -121,6 +122,22 @@ namespace AptRepoBuilder.Workspace.Impl
             
             Log.Information("Indexing all source/binary packages...");
             _aptHelper.ScanSourcesAndPackages(directory);
+            
+            // Write a list of all the components and their source info.
+            var sourcesYaml = new StringBuilder();
+            foreach (var component in _components)
+            {
+                sourcesYaml.AppendLine($"- component: {component.Name}");
+                sourcesYaml.AppendLine($"  source: {component.GitUrl}");
+                sourcesYaml.AppendLine($"  branch: {component.Branch}");
+                sourcesYaml.AppendLine($"  commit: {component.SourceRev.Commit}");
+            }
+            var sourcesPath = Path.Combine(directory, "sources.yml");
+            if (File.Exists(sourcesPath))
+            {
+                File.Delete(sourcesPath);
+            }
+            File.WriteAllText(Path.Combine(directory, "sources.yml"), sourcesYaml.ToString());
         }
 
         public void PublishCache()
