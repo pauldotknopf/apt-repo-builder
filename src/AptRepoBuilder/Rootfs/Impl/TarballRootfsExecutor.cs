@@ -160,8 +160,11 @@ namespace AptRepoBuilder.Rootfs.Impl
             try
             {
                 // Before we run, let's make sure there aren't dangling mounts from a previous build.
-                // /home/pknopf/git/apt-repo-tool-example/.build-cache/rootfs-run/rootfs/workspace/build
-                var mounts = _shellRunner.ReadShell("cat /proc/mounts");
+                var mounts = "";
+                if (File.Exists("/proc/mounts"))
+                {
+                    mounts = _shellRunner.ReadShell("cat /proc/mounts");
+                }
                 var dangling = new List<string>();
                 using (var stringReader = new StringReader(mounts))
                 {
