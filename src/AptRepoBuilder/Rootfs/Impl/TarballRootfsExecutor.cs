@@ -232,6 +232,12 @@ namespace AptRepoBuilder.Rootfs.Impl
                 _shellRunner.RunShell($"mount shm {shmDir.Quoted()} -t tmpfs -o mode=1777,nosuid,nodev", runnerOptions);
                 mountedMounts.Add(shmDir);
 
+                // Add the /etc/resolve.conf from host system into rootfs.
+                if (File.Exists("/etc/resolve.conf"))
+                {
+                    _shellRunner.RunShell($"cp /etc/resolve.conf {Path.Combine(runnerOptions.WorkingDirectory, "etc")}", runnerOptions);
+                }
+                
                 return new RootfsSession(runSession, mountedMounts, _shellRunner);
             }
             catch (Exception)
